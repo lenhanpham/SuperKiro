@@ -1,0 +1,132 @@
+name: Bug Report / Bug 反馈 / Báo lỗi
+description: File a report for an unexpected problem or behavior. / 反馈异常行为或 Bug。 / Báo cáo lỗi hoặc hành vi bất thường.
+title: "[Bug]: "
+labels: ["bug"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to file this report. If the cause is unclear, reviewing the logs and configuration with an AI coding assistant (Claude Code, Codex, etc.) is often an effective first step.
+
+        感谢您花时间提交本反馈。若问题原因不明，建议先借助 AI 编程助手（Claude Code、Codex 等）协助分析日志与配置，通常可快速定位问题。
+
+        Cảm ơn bạn đã dành thời gian báo cáo. Nếu chưa rõ nguyên nhân, hãy thử dùng trợ lý AI (Claude Code, Codex, v.v.) để phân tích log và cấu hình — thường có thể giải quyết nhanh chóng.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Describe the bug / 问题描述 / Mô tả lỗi
+      description: |
+        A clear and concise description of what the bug is.
+        请简明描述遇到的问题。
+        Mô tả ngắn gọn và rõ ràng về lỗi bạn gặp phải.
+      placeholder: |
+        Please also mention any information which could help others understand the problem:
+          - What deployment method are you using?
+          - What have you tried to diagnose or work around this issue?
+          - Is this a regression? If so, have you been able to bisect it to a specific commit?
+
+        请一并提供有助于他人理解问题的信息：
+          - 你使用的部署方式是？
+          - 已经做过哪些排查或临时绕过尝试？
+          - 是否为回归问题？若是，是否定位到具体 commit？
+
+        Vui lòng cung cấp thêm thông tin giúp người khác hiểu vấn đề:
+          - Bạn đang dùng phương thức triển khai nào?
+          - Bạn đã thử chẩn đoán hoặc khắc phục tạm thời ra sao?
+          - Có phải lỗi tái hồi không? Nếu có, bạn có xác định được commit cụ thể không?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: regression
+    attributes:
+      label: Regression / 回归问题 / Lỗi tái hồi
+      description: |
+        Check this box if this is a regression. If you bisected it to a specific commit, include the SHA in the description above.
+        若为回归问题请勾选。如已定位到具体 commit，请在上方描述中附 SHA。
+        Đánh dấu nếu đây là lỗi tái hồi. Nếu đã xác định được commit, vui lòng ghi SHA trong phần mô tả ở trên.
+      options:
+        - label: This is a regression. / 这是一个回归问题。 / Đây là lỗi tái hồi.
+          required: false
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce / 复现步骤 / Các bước tái hiện
+      description: |
+        Steps to reproduce the behavior.
+        复现该问题的步骤。
+        Các bước để tái hiện lỗi.
+      placeholder: |
+        1. Start the service with `docker-compose up -d` using the configuration below.
+        2. Add an account through the admin panel.
+        3. Send: curl -X POST ...
+        4. Got 500, expected 200.
+
+        1. 使用下方配置执行 `docker-compose up -d` 启动服务。
+        2. 通过管理后台添加账号。
+        3. 发送：curl -X POST ...
+        4. 返回 500，预期为 200。
+
+        1. Khởi động service bằng `docker-compose up -d` với cấu hình bên dưới.
+        2. Thêm tài khoản qua admin panel.
+        3. Gửi: curl -X POST ...
+        4. Nhận 500, mong đợi 200.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output / 相关日志 / Log liên quan
+      description: |
+        Paste any relevant log output. It will be formatted as code automatically. Redact tokens, cookies, and personal information first.
+        粘贴相关日志，将自动格式化为代码块。提交前请去除 token、cookie 及个人信息。
+        Dán log liên quan. Nội dung sẽ tự động được định dạng mã. Hãy che token, cookie và thông tin cá nhân trước.
+      render: shell
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact / 影响程度 / Mức độ ảnh hưởng
+      description: Impact of this bug. / 该 Bug 的影响程度。 / Mức độ ảnh hưởng của lỗi này.
+      multiple: false
+      options:
+        - Showstopper – Service unusable or data at risk. / 阻断 – 服务不可用或存在数据风险。 / Tắc nghẽn – Dịch vụ không dùng được hoặc có rủi ro dữ liệu.
+        - Major – Severely degrades functionality; workaround difficult or unavailable. / 严重 – 功能严重受损，绕过困难或不可行。 / Nghiêm trọng – Chức năng bị ảnh hưởng nặng, khó hoặc không có cách khắc phục tạm.
+        - Functional Limitation – Some features broken, system still usable. / 功能受限 – 部分功能异常，系统仍可使用。 / Hạn chế chức năng – Một số tính năng hỏng, hệ thống vẫn dùng được.
+        - Annoyance – Minor issue, no significant impact. / 轻微 – 轻度问题，无明显影响。 / Phiền toái – Lỗi nhẹ, không ảnh hưởng đáng kể.
+        - Intermittent – Occurs occasionally, hard to reproduce. / 间歇 – 偶发，难以稳定复现。 / Không liên tục – Thỉnh thoảng xảy ra, khó tái hiện.
+        - Not sure / 不确定 / Không chắc chắn
+      default: 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment / 环境信息 / Môi trường
+      description: Please complete the following information. / 请补全下列信息。 / Vui lòng điền các thông tin sau.
+      placeholder: |
+        - Version: v1.1.1 / ghcr.io/quorinex/superkiro:latest / commit 1f54f29
+        - Deployment: Docker Compose / docker run / built from source
+        - OS: Ubuntu 22.04 / Windows 11 / macOS 14
+
+        - 版本：v1.1.1 / ghcr.io/quorinex/superkiro:latest / commit 1f54f29
+        - 部署方式：Docker Compose / docker run / 源码编译
+        - 操作系统：Ubuntu 22.04 / Windows 11 / macOS 14
+
+        - Phiên bản: v1.1.1 / ghcr.io/quorinex/superkiro:latest / commit 1f54f29
+        - Triển khai: Docker Compose / docker run / build từ mã nguồn
+        - Hệ điều hành: Ubuntu 22.04 / Windows 11 / macOS 14
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context / 补充信息 / Thông tin bổ sung
+      description: |
+        Other context that could be relevant — screenshots, network or proxy config, related issues, recent changes, AI diagnosis notes, etc.
+        其他可能相关的信息——截图、网络或代理配置、相关 issue、近期变更、AI 排查记录等。
+        Thông tin khác có liên quan — ảnh chụp màn hình, cấu hình mạng/proxy, issue liên quan, thay đổi gần đây, ghi chú chẩn đoán AI, v.v.
