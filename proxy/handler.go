@@ -891,8 +891,12 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, payload *KiroPayload
 	}
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
+		logger.Warnf("[CLAUDE-STREAM] model=%s attempt=%d pool_accounts=%d excluded=%v",
+			model, attempt, h.pool.Count(), excluded)
 		account := h.pool.GetNextForModelExcluding(model, excluded)
 		if account == nil {
+			logger.Warnf("[CLAUDE-STREAM] model=%s no account found after %d attempts",
+				model, attempt)
 			break
 		}
 		if err := h.ensureValidToken(account); err != nil {
@@ -1561,8 +1565,12 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, payload *KiroPayload
 	var lastErr error
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
+		logger.Warnf("[OPENAI-STREAM] model=%s attempt=%d pool_accounts=%d excluded=%v",
+			model, attempt, h.pool.Count(), excluded)
 		account := h.pool.GetNextForModelExcluding(model, excluded)
 		if account == nil {
+			logger.Warnf("[OPENAI-STREAM] model=%s no account found after %d attempts",
+				model, attempt)
 			break
 		}
 		if err := h.ensureValidToken(account); err != nil {
@@ -1854,16 +1862,25 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, payload *KiroPayload
 		}
 
 		err := CallKiroAPI(account, payload, callback)
-		if err != nil {
-			lastErr = err
-			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
-			if !responseStarted {
-				continue
+			if err != nil {
+				lastErr = err
+				excluded[account.ID] = true
+				h.handleAccountFailure(account, err)
+				if !responseStarted {
+					continue
+				}
+				h.recordFailure()
+				errorData, _ := json.Marshal(map[string]interface{}{
+					"error": map[string]string{
+						"type":    "api_error",
+						"message": err.Error(),
+					},
+				})
+				fmt.Fprintf(w, "data: %s\n\n", string(errorData))
+				fmt.Fprintf(w, "data: [DONE]\n\n")
+				flusher.Flush()
+				return
 			}
-			h.recordFailure()
-			return
-		}
 
 		processText("", false, true)
 		if eventThinkingOpen {

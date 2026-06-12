@@ -255,6 +255,19 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 	return best
 }
 
+// CountAccountsForModel returns how many accounts in the pool support the given model.
+func (p *AccountPool) CountAccountsForModel(model string) int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	count := 0
+	for _, acc := range p.accounts {
+		if p.accountHasModel(acc.ID, model) {
+			count++
+		}
+	}
+	return count
+}
+
 // GetByID returns an account by ID
 func (p *AccountPool) GetByID(id string) *config.Account {
 	p.mu.RLock()

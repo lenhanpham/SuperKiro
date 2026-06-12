@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"superkiro/config"
@@ -12,6 +13,13 @@ import (
 	"sync"
 	"time"
 )
+
+// comboBypassKey is used as a context value to indicate that the request
+// is a sub-request of the combo handler (for the "responses" format),
+// preventing infinite recursion in handleOpenAIResponses.
+type contextKey string
+
+const comboBypassKey contextKey = "combo_bypass"
 
 // comboRotationEntry tracks round-robin state for a single combo.
 type comboRotationEntry struct {
@@ -152,6 +160,30 @@ func (h *Handler) handleComboRequest(
 	for i, modelStr := range rotated {
 		logger.Infof("[COMBO] %s attempt %d/%d model=%s", comboName, i+1, len(rotated), modelStr)
 
+		// Resolve the model name through ParseModelAndThinking so the pool
+		// lookup key matches exactly what single-model requests produce.
+		// This normalizes dash/dot formats and strips any thinking suffix.
+		thinkingCfg := config.GetThinkingConfig()
+		resolvedModel, _ := ParseModelAndThinking(modelStr, thinkingCfg.Suffix)
+		if resolvedModel != modelStr {
+			logger.Debugf("[COMBO] %s model=%s resolved to %s", comboName, modelStr, resolvedModel)
+			modelStr = resolvedModel
+		}
+
+		// DIAG: log pool model lists for this model to check if any account supports it
+		poolModelCount := h.pool.CountAccountsForModel(modelStr)
+		totalAccounts := h.pool.Count()
+		logger.Warnf("[COMBO] %s model=%s pool_check total_accounts=%d supporting_model=%d",
+			comboName, modelStr, totalAccounts, poolModelCount)
+		if totalAccounts == 0 {
+			logger.Warnf("[COMBO] %s model=%s POOL IS EMPTY — no enabled/non-quota-blocked accounts",
+				comboName, modelStr)
+		}
+		if poolModelCount == 0 && totalAccounts > 0 {
+			logger.Warnf("[COMBO] %s model=%s NO ACCOUNT supports this model — model name may not match Kiro API output",
+				comboName, modelStr)
+		}
+
 		// Patch the model name in the request body for this attempt.
 		patchedBody, err := patchModelInBody(originalBody, modelStr, format)
 		if err != nil {
@@ -177,10 +209,21 @@ func (h *Handler) handleComboRequest(
 			h.handleClaudeMessages(buf, newReq)
 		case "openai":
 			h.handleOpenAIChat(buf, newReq)
+		case "responses":
+			ctx := context.WithValue(newReq.Context(), comboBypassKey, true)
+			newReq = newReq.WithContext(ctx)
+			h.handleOpenAIResponses(buf, newReq)
 		}
 
+		body := buf.recorder.Body.Bytes()
 		status := buf.status()
 		if status == 0 {
+			status = 500
+		}
+
+		// Even when status is 200, check for SSE error events (mid-stream failure).
+		if status >= 200 && status < 300 && hasSSEErrorEvent(body) {
+			logger.Warnf("[COMBO] %s model=%s SSE stream contained error", comboName, modelStr)
 			status = 500
 		}
 
@@ -191,7 +234,7 @@ func (h *Handler) handleComboRequest(
 		}
 
 		// Extract error message from buffered body.
-		errMsg := extractErrorMessage(buf.recorder.Body.Bytes())
+		errMsg := extractErrorMessage(body)
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("HTTP %d", status)
 		}
@@ -302,4 +345,17 @@ func truncateStr(s string, n int) string {
 		return s
 	}
 	return string(r[:n]) + "…"
+}
+
+// hasSSEErrorEvent checks whether the buffered response body contains an SSE
+// error event. This detects mid-stream failures where the HTTP status was set
+// to 200 by the initial SSE frames but the stream subsequently failed.
+func hasSSEErrorEvent(body []byte) bool {
+	// Claude SSE: event: error\ndata: {...}
+	if bytes.Contains(body, []byte("event: error\n")) {
+		return true
+	}
+	// OpenAI SSE: data: {"error":{"type":"api_error",...}}
+	// Look for data: {"error": after the last valid chunk.
+	return bytes.Contains(body, []byte(`data: {"error":`))
 }

@@ -103,6 +103,15 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 		openaiReq.MaxTokens = *req.MaxOutputTokens
 	}
 
+	// Check if model is a combo name — only on the top-level request, not
+	// on sub-requests dispatched by the combo handler itself.
+	if r.Context().Value(comboBypassKey) == nil {
+		if comboName, comboModels, ok := resolveComboModels(openaiReq.Model); ok {
+			h.handleComboRequest(w, r, comboName, comboModels, body, "responses")
+			return
+		}
+	}
+
 	thinkingCfg := config.GetThinkingConfig()
 	actualModel, thinking := ParseModelAndThinking(req.Model, thinkingCfg.Suffix)
 	openaiReq.Model = actualModel
