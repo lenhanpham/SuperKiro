@@ -24,7 +24,7 @@
 ### Docker Compose（推荐）
 
 ```bash
-git clone https://github.com/Quorinex/SuperKiro.git
+git clone https://github.com/lenhanpham/SuperKiro.git
 cd SuperKiro
 mkdir -p data
 docker-compose up -d
@@ -39,13 +39,13 @@ docker run -d \
   -e ADMIN_PASSWORD=your_secure_password \
   -v /path/to/data:/app/data \
   --restart unless-stopped \
-  ghcr.io/quorinex/superkiro:latest
+  ghcr.io/lenhanpham/superkiro:latest
 ```
 
 ### 源码编译
 
 ```bash
-git clone https://github.com/Quorinex/SuperKiro.git
+git clone https://github.com/lenhanpham/SuperKiro.git
 cd SuperKiro
 go build -o superkiro .
 ./superkiro
@@ -120,7 +120,7 @@ curl http://localhost:8080/v1/chat/completions \
 ## 致谢
 
 - SuperKiro 是从 Kiro-Go fork 出来的，并基于 Kiro-Go 开发
-https://github.com/Quorinex/Kiro-Go
+https://github.com/lenhanpham/Kiro-Go
 
 ## 免责声明
 

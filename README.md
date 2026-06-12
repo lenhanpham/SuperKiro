@@ -24,7 +24,7 @@ If this project helps you, a Star would mean a lot.
 ### Docker Compose (Recommended)
 
 ```bash
-git clone https://github.com/Quorinex/SuperKiro.git
+git clone https://github.com/lenhanpham/SuperKiro.git
 cd SuperKiro
 mkdir -p data
 docker-compose up -d
@@ -39,13 +39,13 @@ docker run -d \
   -e ADMIN_PASSWORD=your_secure_password \
   -v /path/to/data:/app/data \
   --restart unless-stopped \
-  ghcr.io/quorinex/superkiro:latest
+  ghcr.io/lenhanpham/superkiro:latest
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/Quorinex/SuperKiro.git
+git clone https://github.com/lenhanpham/SuperKiro.git
 cd SuperKiro
 go build -o superkiro .
 ./superkiro
@@ -120,7 +120,7 @@ Friendly discussion is welcome. If you run into issues, try asking Claude Code, 
 ## Acknowledge 
 
 - SuperKiro is forked from Kiro-Go and developed based on Kiro-Go 
-https://github.com/Quorinex/Kiro-Go
+https://github.com/lenhanpham/Kiro-Go
 
 ## Disclaimer
 

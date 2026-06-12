@@ -818,6 +818,15 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Check if model is a combo name FIRST, before thinking/alias resolution.
+	// This prevents alias mappings (e.g. "gpt-4o" → "claude-sonnet-4.5") from
+	// defeating combo detection when a combo shares an alias name.
+	if comboName, comboModels, ok := resolveComboModels(req.Model); ok {
+		body, _ := json.Marshal(req)
+		h.handleComboRequest(w, r, comboName, comboModels, body, "claude")
+		return
+	}
+
 	// parse model and thinking mode
 	thinkingCfg := config.GetThinkingConfig()
 	actualModel, thinking := resolveClaudeThinkingMode(req.Model, req.Thinking, thinkingCfg.Suffix)
@@ -832,12 +841,6 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 
 	// Stream or non-stream
 	apiKeyID := apiKeyIDFromContext(r.Context())
-	// Check if model is a combo name — if so, run the combo fallback engine.
-	if comboName, comboModels, ok := resolveComboModels(req.Model); ok {
-		body, _ := json.Marshal(req)
-		h.handleComboRequest(w, r, comboName, comboModels, body, "claude")
-		return
-	}
 	if req.Stream {
 		h.handleClaudeStream(w, kiroPayload, req.Model, thinking, thinkingResponseOpts, estimatedInputTokens, cacheProfile, apiKeyID)
 	} else {
@@ -1515,6 +1518,13 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if model is a combo name FIRST, before thinking/alias resolution.
+	if comboName, comboModels, ok := resolveComboModels(req.Model); ok {
+		body, _ := json.Marshal(req)
+		h.handleComboRequest(w, r, comboName, comboModels, body, "openai")
+		return
+	}
+
 	// parse model and thinking mode
 	thinkingCfg := config.GetThinkingConfig()
 	actualModel, thinking := ParseModelAndThinking(req.Model, thinkingCfg.Suffix)
@@ -1524,12 +1534,6 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	kiroPayload := OpenAIToKiro(&req, thinking)
 
 	apiKeyID := apiKeyIDFromContext(r.Context())
-	// Check if model is a combo name — if so, run the combo fallback engine.
-	if comboName, comboModels, ok := resolveComboModels(req.Model); ok {
-		body, _ := json.Marshal(req)
-		h.handleComboRequest(w, r, comboName, comboModels, body, "openai")
-		return
-	}
 	if req.Stream {
 		h.handleOpenAIStream(w, kiroPayload, req.Model, thinking, estimatedInputTokens, apiKeyID)
 	} else {

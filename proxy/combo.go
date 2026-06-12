@@ -181,7 +181,7 @@ func (h *Handler) handleComboRequest(
 
 		status := buf.status()
 		if status == 0 {
-			status = 200
+			status = 500
 		}
 
 		if status >= 200 && status < 300 {
