@@ -1,5 +1,5 @@
-name: Feature Request / 功能建议
-description: Suggest a new idea or new functionality. / 提出新想法或新功能。
+name: Feature Request / 功能建议 / Yêu cầu Tính năng
+description: Suggest a new idea or new functionality. / 提出新想法或新功能。 / Đề xuất ý tưởng hoặc tính năng mới.
 title: "[Feature]: "
 labels: ["enhancement"]
 assignees: []
@@ -11,45 +11,52 @@ body:
 
         提交前请先搜索已有 issue 与 README，确认该功能尚未提供。若不确定现有功能或简单脚本是否已能满足需求，可先借助 AI 编程助手（Claude Code、Codex 等）协助分析。提交可用的 Pull Request 是落地新功能最有效的方式；维护者保留拒绝超出项目范围之需求的权利。
 
+        Trước khi gửi, vui lòng tìm kiếm issue và README để xác nhận tính năng này chưa được hỗ trợ. Nếu không chắc các tùy chọn hiện tại hoặc script nhỏ đã đáp ứng được nhu cầu, hãy nhờ trợ lý AI (Claude Code, Codex, v.v.) hỗ trợ. Một Pull Request khả thi là cách hiệu quả nhất để đưa tính năng vào; người bảo trì có thể từ chối yêu cầu nằm ngoài phạm vi dự án.
+
   - type: textarea
     id: problem
     attributes:
-      label: Is your feature request related to a problem? Please describe. / 该需求是否源于某个具体问题？
+      label: Is your feature request related to a problem? Please describe. / 该需求是否源于某个具体问题？ / Yêu cầu này có liên quan đến một vấn đề?
       description: |
         A clear and concise description of what the problem is.
         请简明描述实际遇到的问题。
+        Mô tả ngắn gọn vấn đề bạn gặp phải.
       placeholder: |
         e.g., I'm frustrated when I need to do X manually because Y is missing.
         例如：因为缺少 Y，每次都要手动做 X，很麻烦。
+        VD: Tôi gặp khó khăn khi phải làm X thủ công vì thiếu Y.
     validations:
       required: true
 
   - type: textarea
     id: solution
     attributes:
-      label: Describe the solution you'd like / 期望的解决方案
+      label: Describe the solution you'd like / 期望的解决方案 / Giải pháp mong muốn
       description: |
         A clear and concise description of what you want to happen.
         请简明描述希望实现的效果。
+        Mô tả ngắn gọn điều bạn muốn xảy ra.
       placeholder: |
         e.g., It would be great if the system could automatically handle X by doing Y.
         例如：希望系统能够通过 Y 自动处理 X。
+        VD: Sẽ rất tuyệt nếu hệ thống có thể tự động xử lý X bằng cách thực hiện Y.
     validations:
       required: true
 
   - type: textarea
     id: alternatives
     attributes:
-      label: Describe alternatives you've considered / 已考虑的替代方案
+      label: Describe alternatives you've considered / 已考虑的替代方案 / Các giải pháp thay thế đã cân nhắc
       description: |
         Include any alternative solutions or features you've considered.
         请列出已考虑或尝试过的其他方案。
+        Liệt kê các giải pháp hoặc tính năng thay thế bạn đã cân nhắc.
 
   - type: dropdown
     id: contribution
     attributes:
-      label: Are you willing to submit a PR? / 是否愿意提交 PR？
+      label: Are you willing to submit a PR? / 是否愿意提交 PR？ / Bạn có sẵn sàng gửi PR?
       options:
-        - "Yes, I will submit a PR. / 愿意，我将提交 PR。"
-        - "Yes, with some guidance. / 愿意，但需要一定指导。"
-        - "No. / 不愿意。"
+        - "Yes, I will submit a PR. / 愿意，我将提交 PR。 / Có, tôi sẽ gửi PR."
+        - "Yes, with some guidance. / 愿意，但需要一定指导。 / Có, nhưng cần hướng dẫn."
+        - "No. / 不愿意。 / Không."
