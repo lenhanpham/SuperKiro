@@ -12,7 +12,7 @@ Nếu dự án này hữu ích với bạn, hãy cho một Star nhé.
 
 ## Tính năng
 
-- Anthropic `/v1/messages` & OpenAI `/v1/chat/completions`
+- Anthropic `/v1/messages`, OpenAI `/v1/chat/completions` & `/v1/responses`
 - Nhóm đa tài khoản với cân bằng tải round-robin
 - Tự động làm mới Token, phát trực tiếp SSE, Web admin panel
 - Nhiều phương thức xác thực: AWS Builder ID, IAM Identity Center (Enterprise SSO), SSO Token, bộ nhớ đệm local, credentials JSON
@@ -89,11 +89,17 @@ curl http://localhost:8080/v1/messages \
   -H "anthropic-version: 2023-06-01" \
   -d '{"model":"claude-sonnet-4.5","max_tokens":1024,"messages":[{"role":"user","content":"Xin chào!"}]}'
 
-# OpenAI
+# OpenAI / Chat
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer any" \
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Xin chào!"}]}'
+
+# OpenAI / Responses
+curl http://localhost:8080/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer any" \
+  -d '{"model":"claude-sonnet-4.5","input":"Xin chào!","max_output_tokens":1024}'
 ```
 
 ## Chế độ Thinking

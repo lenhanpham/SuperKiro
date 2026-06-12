@@ -12,7 +12,7 @@ If this project helps you, a Star would mean a lot.
 
 ## Features
 
-- Anthropic `/v1/messages` & OpenAI `/v1/chat/completions`
+- Anthropic `/v1/messages`, OpenAI `/v1/chat/completions` & `/v1/responses`
 - Multi-account pool with round-robin load balancing
 - Auto token refresh, SSE streaming, Web admin panel
 - Multiple auth: AWS Builder ID, IAM Identity Center (Enterprise SSO), SSO Token, local cache, credentials JSON
@@ -89,11 +89,17 @@ curl http://localhost:8080/v1/messages \
   -H "anthropic-version: 2023-06-01" \
   -d '{"model":"claude-sonnet-4.5","max_tokens":1024,"messages":[{"role":"user","content":"Hello!"}]}'
 
-# OpenAI
+# OpenAI / Chat
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer any" \
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]}'
+
+# OpenAI / Responses
+curl http://localhost:8080/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer any" \
+  -d '{"model":"claude-sonnet-4.5","input":"Hello!","max_output_tokens":1024}'
 ```
 
 ## Thinking Mode

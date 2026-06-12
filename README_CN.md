@@ -12,7 +12,7 @@
 
 ## 功能特性
 
-- Anthropic `/v1/messages` 与 OpenAI `/v1/chat/completions`
+- Anthropic `/v1/messages`、OpenAI `/v1/chat/completions` 与 `/v1/responses`
 - 多账号池轮询负载均衡
 - 自动 Token 刷新、SSE 流式输出、Web 管理面板
 - 多种认证方式：AWS Builder ID、IAM Identity Center (企业 SSO)、SSO Token、本地缓存、凭证 JSON
@@ -89,11 +89,17 @@ curl http://localhost:8080/v1/messages \
   -H "anthropic-version: 2023-06-01" \
   -d '{"model":"claude-sonnet-4.5","max_tokens":1024,"messages":[{"role":"user","content":"你好！"}]}'
 
-# OpenAI
+# OpenAI / Chat
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer any" \
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"你好！"}]}'
+
+# OpenAI / Responses
+curl http://localhost:8080/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer any" \
+  -d '{"model":"claude-sonnet-4.5","input":"你好！","max_output_tokens":1024}'
 ```
 
 ## 思考模式
