@@ -120,7 +120,7 @@ curl http://localhost:8080/v1/chat/completions \
 ## 致谢
 
 - SuperKiro 是从 Kiro-Go fork 出来的，并基于 Kiro-Go 开发
-https://github.com/lenhanpham/Kiro-Go
+https://github.com/Quorinex/Kiro-Go
 
 ## 免责声明
 

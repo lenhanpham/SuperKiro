@@ -120,7 +120,7 @@ Friendly discussion is welcome. If you run into issues, try asking Claude Code, 
 ## Acknowledge 
 
 - SuperKiro is forked from Kiro-Go and developed based on Kiro-Go 
-https://github.com/lenhanpham/Kiro-Go
+https://github.com/Quorinex/Kiro-Go
 
 ## Disclaimer
 
