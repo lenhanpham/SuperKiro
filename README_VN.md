@@ -16,7 +16,7 @@ Nếu dự án này hữu ích với bạn, hãy cho một Star nhé.
 - Nhóm đa tài khoản với cân bằng tải round-robin
 - Tự động làm mới Token, phát trực tiếp SSE, Web admin panel
 - Nhiều phương thức xác thực: AWS Builder ID, IAM Identity Center (Enterprise SSO), SSO Token, bộ nhớ đệm local, credentials JSON
-- Theo dõi sử dụng, xuất/nhập tài khoản, i18n (EN / 中文 / Tiếng Việt)
+- Theo dõi sử dụng, xuất/nhập tài khoản, i18n (EN / 中文 / VN)
 - Hỗ trợ cấu hình proxy ra ngoài (SOCKS5 / HTTP)
 
 ## Bắt đầu nhanh

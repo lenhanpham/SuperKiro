@@ -37,7 +37,7 @@ func resolveComboModels(modelStr string) (string, []string, bool) {
 		return "", nil, false
 	}
 	entry := config.GetComboByName(modelStr)
-	if entry == nil || len(entry.Models) < 2 {
+	if entry == nil || len(entry.Models) < 1 {
 		return "", nil, false
 	}
 	return entry.Name, entry.Models, true

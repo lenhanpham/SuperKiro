@@ -75,8 +75,8 @@ func AddCombo(entry ComboEntry) (ComboEntry, error) {
 	if strings.Contains(entry.Name, "/") {
 		return ComboEntry{}, errors.New("combo name must not contain '/'")
 	}
-	if len(entry.Models) < 2 {
-		return ComboEntry{}, errors.New("combo must have at least 2 models")
+	if len(entry.Models) < 1 {
+		return ComboEntry{}, errors.New("combo must have at least 1 model")
 	}
 	for _, existing := range cfg.Combos {
 		if existing.Name == entry.Name {
@@ -137,8 +137,8 @@ func UpdateCombo(id string, patch ComboUpdateRequest) error {
 		cfg.Combos[idx].Name = newName
 	}
 	if len(patch.Models) > 0 {
-		if len(patch.Models) < 2 {
-			return errors.New("combo must have at least 2 models")
+		if len(patch.Models) < 1 {
+			return errors.New("combo must have at least 1 model")
 		}
 		cfg.Combos[idx].Models = patch.Models
 	}

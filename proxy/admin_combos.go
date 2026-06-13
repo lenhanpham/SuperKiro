@@ -68,9 +68,9 @@ func (h *Handler) apiCreateCombo(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"error": "combo name must not contain '/'"})
 		return
 	}
-	if len(req.Models) < 2 {
+	if len(req.Models) < 1 {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "combo must have at least 2 models"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "combo must have at least 1 model"})
 		return
 	}
 	entry := config.ComboEntry{
