@@ -36,6 +36,12 @@ func RunDaemon(configPath string) {
 	os.Stdout = f
 	os.Stderr = f
 
+	pidPath := PIDPath(configPath)
+	defer RemovePID(pidPath)
+	if CheckAndKillExisting(pidPath) {
+		os.Exit(0)
+	}
+
 	logger.Init(config.GetLogLevel())
 	logger.SetOutput(f)
 
@@ -47,7 +53,6 @@ func RunDaemon(configPath string) {
 	handler := proxy.NewHandler()
 
 	addr := fmt.Sprintf("%s:%d", config.GetHost(), config.GetPort())
-	logger.Infof("SuperKiro started in background on http://%s (PID: %d)", addr, os.Getpid())
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -62,6 +67,9 @@ func RunDaemon(configPath string) {
 			logger.Fatalf("Server failed: %v", err)
 		}
 	}()
+
+	WritePID(pidPath)
+	logger.Infof("SuperKiro started in background on http://%s (PID: %d)", addr, os.Getpid())
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

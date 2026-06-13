@@ -2907,6 +2907,18 @@
     const checkUpdateBtn = $('checkUpdateBtn');
     if (checkUpdateBtn) checkUpdateBtn.addEventListener('click', () => checkUpdate(true));
 
+    const shutdownBtn = $('shutdownBtn');
+    if (shutdownBtn) shutdownBtn.addEventListener('click', async () => {
+      if (!confirm(t('footer.shutdownConfirm'))) return;
+      shutdownBtn.disabled = true;
+      try {
+        await api('/shutdown', { method: 'POST' });
+        toast(t('footer.shutdownSent'), 'primary');
+      } catch (e) {
+        toast(t('footer.shutdownSent'), 'primary');
+      }
+    });
+
     document.body.addEventListener('click', e => {
       if (!e.target.closest('.custom-select')) closeAllCustomSelects();
       const lb = e.target.closest('.lang-btn');

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -2215,6 +2216,9 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 		h.apiUpdateCombo(w, r, strings.TrimPrefix(path, "/combos/"))
 	case strings.HasPrefix(path, "/combos/") && r.Method == "DELETE":
 		h.apiDeleteCombo(w, r, strings.TrimPrefix(path, "/combos/"))
+	case path == "/shutdown" && r.Method == "POST":
+		h.apiShutdown(w, r)
+
 	default:
 		w.WriteHeader(404)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Not Found"})
@@ -3666,6 +3670,14 @@ func (h *Handler) apiExportAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) apiShutdown(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "shutting down"})
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	syscall.Kill(syscall.Getpid(), syscall.SIGINT)
 }
 
 func clampInt(v, min, max int) int {

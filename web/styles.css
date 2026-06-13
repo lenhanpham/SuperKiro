@@ -956,6 +956,29 @@ label:has(> .switch) > span {
 .footer-link[aria-busy="true"] i {
   animation: updateCheckSpin 0.8s linear infinite;
 }
+.footer-shutdown-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: color 0.15s, background 0.15s;
+}
+.footer-shutdown-btn:hover {
+  color: #e53e3e;
+  background: color-mix(in srgb, #e53e3e 10%, transparent);
+}
+.footer-shutdown-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 @keyframes updateCheckSpin {
   to {
     transform: rotate(360deg);

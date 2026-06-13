@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+var pidPath string
+
 func main() {
 	configPath := "data/config.json"
 	if envPath := os.Getenv("CONFIG_PATH"); envPath != "" {
@@ -31,6 +33,12 @@ func main() {
 	if err := config.Init(configPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
+	}
+
+	pidPath = cli.PIDPath(configPath)
+	defer cli.RemovePID(pidPath)
+	if cli.CheckAndKillExisting(pidPath) {
+		os.Exit(0)
 	}
 
 	daemonMode := false
@@ -72,6 +80,7 @@ func main() {
 	}
 
 	srv := startServer(addr, handler)
+	cli.WritePID(pidPath)
 
 	if useMenu && cli.IsTerminal() {
 		cli.ShowMenu(addr, func() {
