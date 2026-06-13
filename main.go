@@ -1,72 +1,90 @@
-// Package main provides the entry point for SuperKiro.
-//
-// SuperKiro is a reverse proxy service that translates Kiro API requests
-// into OpenAI and Anthropic (Claude) compatible formats. Key features include:
-//   - Multi-account pool with round-robin load balancing
-//   - Automatic OAuth token refresh
-//   - Streaming response support for real-time AI interactions
-//   - Admin panel for account and configuration management
-//
-// The service exposes the following endpoints:
-//   - /v1/messages - Claude API compatible endpoint
-//   - /v1/chat/completions - OpenAI API compatible endpoint
-//   - /admin - Web-based administration panel
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"superkiro/cli"
 	"superkiro/config"
 	"superkiro/logger"
 	"superkiro/pool"
 	"superkiro/proxy"
-	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
 func main() {
-	// config file path, overridable by env var
 	configPath := "data/config.json"
 	if envPath := os.Getenv("CONFIG_PATH"); envPath != "" {
 		configPath = envPath
 	}
 
-	// ensure data directory exists
 	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		log.Fatalf("Failed to create data directory: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to create data directory: %v\n", err)
+		os.Exit(1)
 	}
 
-	// load config
 	if err := config.Init(configPath); err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+		os.Exit(1)
 	}
 
-	// Initialize log level: LOG_LEVEL env var takes priority over config, defaulting to "info".
+	daemonMode := false
+	useMenu := true
+	for _, arg := range os.Args[1:] {
+		switch arg {
+		case "--daemon":
+			daemonMode = true
+		case "--no-menu":
+			useMenu = false
+		}
+	}
+
+	if daemonMode {
+		cli.RunDaemon(configPath)
+		return
+	}
+
 	logger.Init(config.GetLogLevel())
 
-	// env var overrides password
 	if envPassword := os.Getenv("ADMIN_PASSWORD"); envPassword != "" {
 		config.SetPassword(envPassword)
 	}
 
-	// initialize account pool
 	pool.GetPool()
-
-	// create HTTP handler (with background refresh)
 	handler := proxy.NewHandler()
 
-	// start server
 	addr := fmt.Sprintf("%s:%d", config.GetHost(), config.GetPort())
-	logger.Infof("SuperKiro starting on http://%s (log level: %s)", addr, logger.LevelName(logger.GetLevel()))
-	logger.Infof("Admin panel: http://%s/admin", addr)
-	logger.Infof("Claude API: http://%s/v1/messages", addr)
-	logger.Infof("OpenAI API: http://%s/v1/chat/completions", addr)
 
-	// WriteTimeout intentionally 0: SSE streams can run for minutes while the
-	// upstream model produces tokens. ReadHeaderTimeout + ReadTimeout still
-	// guard against slowloris-style header/body stalls.
+	if useMenu && cli.IsTerminal() {
+		// In menu mode, suppress all log output to the terminal.
+		// Logs are still captured in the ring buffer for the verbose log viewer.
+		logger.SetOutput(io.Discard)
+	} else {
+		logger.Infof("SuperKiro starting on http://%s (log level: %s)", addr, logger.LevelName(logger.GetLevel()))
+		logger.Infof("Admin panel: http://%s/admin", addr)
+		logger.Infof("Claude API: http://%s/v1/messages", addr)
+		logger.Infof("OpenAI API: http://%s/v1/chat/completions", addr)
+	}
+
+	srv := startServer(addr, handler)
+
+	if useMenu && cli.IsTerminal() {
+		cli.ShowMenu(addr, func() {
+			shutdownServer(srv)
+		})
+	} else {
+		waitForSignal(func() {
+			shutdownServer(srv)
+		})
+	}
+}
+
+func startServer(addr string, handler *proxy.Handler) *http.Server {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
@@ -74,8 +92,23 @@ func main() {
 		ReadTimeout:       60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err.Error() != "http: Server closed" {
+			logger.Fatalf("Server failed: %v", err)
+		}
+	}()
+	return srv
+}
 
-	if err := srv.ListenAndServe(); err != nil {
-		logger.Fatalf("Server failed: %v", err)
-	}
+func shutdownServer(srv *http.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	srv.Shutdown(ctx)
+}
+
+func waitForSignal(shutdown func()) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+	shutdown()
 }

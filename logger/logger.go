@@ -11,12 +11,56 @@
 package logger
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 )
+
+// RingBuffer holds a fixed-capacity circular buffer of log entries.
+type RingBuffer struct {
+	mu    sync.Mutex
+	lines []string
+	cap   int
+	pos   int
+	full  bool
+}
+
+// NewRingBuffer creates a ring buffer with the given capacity.
+func NewRingBuffer(capacity int) *RingBuffer {
+	return &RingBuffer{lines: make([]string, capacity), cap: capacity}
+}
+
+// Write appends data to the ring buffer as a log line.
+func (rb *RingBuffer) Write(p []byte) (int, error) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	rb.lines[rb.pos] = string(p)
+	rb.pos = (rb.pos + 1) % rb.cap
+	if rb.pos == 0 {
+		rb.full = true
+	}
+	return len(p), nil
+}
+
+// Lines returns all entries in chronological order.
+func (rb *RingBuffer) Lines() []string {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	if !rb.full {
+		out := make([]string, rb.pos)
+		copy(out, rb.lines[:rb.pos])
+		return out
+	}
+	out := make([]string, rb.cap)
+	copy(out, rb.lines[rb.pos:])
+	copy(out[rb.cap-rb.pos:], rb.lines[:rb.pos])
+	return out
+}
 
 // Level represents a log severity.
 type Level int32
@@ -35,7 +79,19 @@ var (
 	infoLog  = log.New(os.Stdout, "INFO  ", log.LstdFlags)
 	warnLog  = log.New(os.Stderr, "WARN  ", log.LstdFlags)
 	errorLog = log.New(os.Stderr, "ERROR ", log.LstdFlags)
+
+	// LogBuf stores the last 2048 log lines for the verbose log viewer.
+	LogBuf = NewRingBuffer(2048)
 )
+
+// logLine formats a message the same way the standard loggers do: prefix + date + message.
+func logLine(prefix, format string, v ...interface{}) string {
+	msg := fmt.Sprintf(format, v...)
+	if len(msg) > 0 && msg[len(msg)-1] != '\n' {
+		msg += "\n"
+	}
+	return prefix + time.Now().Format("2006/01/02 15:04:05 ") + msg
+}
 
 func init() {
 	currentLevel.Store(int32(LevelInfo))
@@ -110,6 +166,7 @@ func enabled(l Level) bool {
 func Debugf(format string, v ...interface{}) {
 	if enabled(LevelDebug) {
 		debugLog.Printf(format, v...)
+		LogBuf.Write([]byte(logLine("DEBUG ", format, v...)))
 	}
 }
 
@@ -117,6 +174,7 @@ func Debugf(format string, v ...interface{}) {
 func Infof(format string, v ...interface{}) {
 	if enabled(LevelInfo) {
 		infoLog.Printf(format, v...)
+		LogBuf.Write([]byte(logLine("INFO  ", format, v...)))
 	}
 }
 
@@ -124,6 +182,7 @@ func Infof(format string, v ...interface{}) {
 func Warnf(format string, v ...interface{}) {
 	if enabled(LevelWarn) {
 		warnLog.Printf(format, v...)
+		LogBuf.Write([]byte(logLine("WARN  ", format, v...)))
 	}
 }
 
@@ -131,11 +190,13 @@ func Warnf(format string, v ...interface{}) {
 func Errorf(format string, v ...interface{}) {
 	if enabled(LevelError) {
 		errorLog.Printf(format, v...)
+		LogBuf.Write([]byte(logLine("ERROR ", format, v...)))
 	}
 }
 
 // Fatalf logs a formatted message at ERROR level and terminates the process.
 func Fatalf(format string, v ...interface{}) {
 	errorLog.Printf(format, v...)
+	LogBuf.Write([]byte(logLine("ERROR ", format, v...)))
 	os.Exit(1)
 }
