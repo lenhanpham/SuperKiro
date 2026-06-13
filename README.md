@@ -9,15 +9,19 @@
 # SuperKiro
 <p align="center">
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
+</p>
+<p align="center">
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://www.docker.com/)
+</p>
+<p align="center">
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-
+</p>
 Convert Kiro accounts to OpenAI / Anthropic compatible API service.
 
 [English](README.md) | [中文](README_CN.md) | [Tiếng Việt](README_VN.md)
 
 If this project helps you, a Star would mean a lot.
-</p>
+
 
 ## Features
 
