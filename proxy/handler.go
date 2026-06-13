@@ -2219,9 +2219,946 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 	case path == "/shutdown" && r.Method == "POST":
 		h.apiShutdown(w, r)
 
+	case strings.HasPrefix(path, "/cli-tools/apikey/") && r.Method == "GET":
+		keyID := strings.TrimPrefix(path, "/cli-tools/apikey/")
+		h.apiGetCliToolApiKey(w, r, keyID)
+
+	// Model test endpoint
+	case path == "/cli-tools/test-model" && r.Method == "POST":
+		h.apiTestModel(w, r)
+
+	// MITM routes (must come before generic /cli-tools/ catch-all)
+	case path == "/cli-tools/mitm/status" && r.Method == "GET":
+		h.apiMitmStatus(w, r)
+	case path == "/cli-tools/mitm/server" && r.Method == "POST":
+		h.apiMitmStart(w, r)
+	case path == "/cli-tools/mitm/server" && r.Method == "DELETE":
+		h.apiMitmStop(w, r)
+	case path == "/cli-tools/mitm/dns" && r.Method == "PATCH":
+		h.apiMitmToggleDns(w, r)
+	case path == "/cli-tools/mitm/aliases" && r.Method == "PUT":
+		h.apiMitmSaveAliases(w, r)
+	case path == "/cli-tools/copilot-settings" && (r.Method == "GET" || r.Method == "POST" || r.Method == "DELETE"):
+		h.apiCopilotSettings(w, r)
+
+	case strings.HasPrefix(path, "/cli-tools/") && r.Method == "POST":
+		toolID := strings.TrimPrefix(path, "/cli-tools/")
+		h.apiApplyCliToolSettings(w, r, toolID)
+	case strings.HasPrefix(path, "/cli-tools/") && r.Method == "DELETE":
+		toolID := strings.TrimPrefix(path, "/cli-tools/")
+		h.apiResetCliToolSettings(w, r, toolID)
+
 	default:
 		w.WriteHeader(404)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Not Found"})
+	}
+}
+
+// CLI tools
+func (h *Handler) apiApplyCliToolSettings(w http.ResponseWriter, r *http.Request, toolID string) {
+	var req struct {
+		BaseURL       string            `json:"baseUrl"`
+		APIKey        string            `json:"apiKey"`
+		Model         string            `json:"model"`
+		Models        []string          `json:"models"`
+		ActiveModel   string            `json:"activeModel"`
+		SubagentModel string            `json:"subagentModel"`
+		Env           map[string]string `json:"env"`
+		AgentModels   map[string]string `json:"agentModels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		http.Error(w, `{"error":"cannot determine home directory"}`, 500)
+		return
+	}
+	ensureV1 := func(url string) string {
+		url = strings.TrimRight(url, "/")
+		if !strings.HasSuffix(url, "/v1") {
+			url += "/v1"
+		}
+		return url
+	}
+	stripV1 := func(url string) string {
+		url = strings.TrimRight(url, "/")
+		url = strings.TrimSuffix(url, "/v1")
+		return url
+	}
+	switch toolID {
+	case "claude":
+		settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
+		if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		current := map[string]interface{}{}
+		if data, err := os.ReadFile(settingsPath); err == nil {
+			json.Unmarshal(data, &current)
+		}
+		env := map[string]string{}
+		if existing, ok := current["env"].(map[string]interface{}); ok {
+			for k, v := range existing {
+				if s, ok2 := v.(string); ok2 {
+					env[k] = s
+				}
+			}
+		}
+		if req.Env != nil {
+			for k, v := range req.Env {
+				if v != "" {
+					if k == "ANTHROPIC_BASE_URL" {
+						v = ensureV1(v)
+					}
+					env[k] = v
+				}
+			}
+		}
+		current["hasCompletedOnboarding"] = true
+		current["env"] = env
+		data, _ := json.MarshalIndent(current, "", "  ")
+		if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+			http.Error(w, `{"error":"failed to write config file"}`, 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "opencode":
+		configPath := filepath.Join(homeDir, ".config", "opencode", "opencode.json")
+		if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		current := map[string]interface{}{}
+		if data, err := os.ReadFile(configPath); err == nil {
+			json.Unmarshal(data, &current)
+		}
+		bpURL := ensureV1(req.BaseURL)
+		modelsMap := make(map[string]interface{})
+		modelsList := req.Models
+		if len(modelsList) == 0 && req.Model != "" {
+			modelsList = []string{req.Model}
+		}
+		for _, m := range modelsList {
+			if m == "" {
+				continue
+			}
+			modelsMap[m] = map[string]interface{}{
+				"name": m,
+				"modalities": map[string]interface{}{
+					"input":  []string{"text", "image"},
+					"output": []string{"text"},
+				},
+			}
+		}
+		activeM := req.ActiveModel
+		if activeM == "" && len(modelsList) > 0 {
+			activeM = modelsList[0]
+		}
+		subM := req.SubagentModel
+		if subM == "" {
+			subM = activeM
+		}
+		provider := map[string]interface{}{
+			"npm": "@ai-sdk/openai-compatible",
+			"options": map[string]string{
+				"baseURL": bpURL,
+				"apiKey":  req.APIKey,
+			},
+			"models": modelsMap,
+		}
+		current["provider"] = map[string]interface{}{"superkiro": provider}
+		if current["model"] != nil {
+			delete(current, "model")
+		}
+		if activeM != "" {
+			current["model"] = "superkiro/" + activeM
+		}
+		if subM != "" {
+			current["agent"] = map[string]interface{}{
+				"explorer": map[string]interface{}{
+					"description": "Fast explorer subagent for codebase exploration",
+					"mode":        "subagent",
+					"model":       "superkiro/" + subM,
+				},
+			}
+		}
+		data, _ := json.MarshalIndent(current, "", "  ")
+		if err := os.WriteFile(configPath, data, 0644); err != nil {
+			http.Error(w, `{"error":"failed to write config file"}`, 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "cline":
+		secretsDir := filepath.Join(homeDir, ".cline", "data")
+		if err := os.MkdirAll(secretsDir, 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		baseURL := stripV1(req.BaseURL)
+		model := req.Model
+		if model == "" {
+			model = "provider/model-id"
+		}
+		global := map[string]interface{}{
+			"actModeApiProvider":     "openai",
+			"planModeApiProvider":    "openai",
+			"openAiBaseUrl":          baseURL,
+			"openAiModelId":          model,
+			"planModeOpenAiModelId":  model,
+		}
+		globalData, _ := json.MarshalIndent(global, "", "  ")
+		if err := os.WriteFile(filepath.Join(secretsDir, "globalState.json"), globalData, 0644); err != nil {
+			http.Error(w, `{"error":"failed to write globalState.json"}`, 500)
+			return
+		}
+		secrets := map[string]string{"openAiApiKey": req.APIKey}
+		secretsData, _ := json.MarshalIndent(secrets, "", "  ")
+		if err := os.WriteFile(filepath.Join(secretsDir, "secrets.json"), secretsData, 0644); err != nil {
+			http.Error(w, `{"error":"failed to write secrets.json"}`, 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "codex":
+		codexDir := filepath.Join(homeDir, ".codex")
+		if err := os.MkdirAll(codexDir, 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		model := req.Model
+		if model == "" {
+			model = "provider/model-id"
+		}
+		subagent := req.SubagentModel
+		if subagent == "" {
+			subagent = model
+		}
+		bpURL := ensureV1(req.BaseURL)
+		tomlContent := fmt.Sprintf(`# SuperKiro Configuration for Codex CLI
+model = "%s"
+model_provider = "superkiro"
+
+[model_providers.superkiro]
+name = "SuperKiro"
+base_url = "%s"
+wire_api = "responses"
+
+[agents.subagent]
+model = "%s"
+`, model, bpURL, subagent)
+		if err := os.WriteFile(filepath.Join(codexDir, "config.toml"), []byte(tomlContent), 0644); err != nil {
+			http.Error(w, `{"error":"failed to write config.toml"}`, 500)
+			return
+		}
+		auth := map[string]string{"auth_mode": "apikey", "OPENAI_API_KEY": req.APIKey}
+		authData, _ := json.MarshalIndent(auth, "", "  ")
+		if err := os.WriteFile(filepath.Join(codexDir, "auth.json"), authData, 0644); err != nil {
+			http.Error(w, `{"error":"failed to write auth.json"}`, 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "kilocode":
+		kiloDir := filepath.Join(homeDir, ".local", "share", "kilo")
+		if err := os.MkdirAll(kiloDir, 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		bpURL := ensureV1(req.BaseURL)
+		model := req.Model
+		if model == "" {
+			model = "provider/model-id"
+		}
+		auth := map[string]interface{}{
+			"openai-compatible": map[string]interface{}{
+				"type":    "api-key",
+				"apiKey":  req.APIKey,
+				"baseUrl": bpURL,
+				"model":   model,
+			},
+		}
+		data, _ := json.MarshalIndent(auth, "", "  ")
+		if err := os.WriteFile(filepath.Join(kiloDir, "auth.json"), data, 0644); err != nil {
+			http.Error(w, `{"error":"failed to write auth.json"}`, 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "deepseek":
+		deepseekDir := filepath.Join(homeDir, ".deepseek")
+		if err := os.MkdirAll(deepseekDir, 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		bpURL := ensureV1(req.BaseURL)
+		model := req.Model
+		if model == "" {
+			model = "provider/model-id"
+		}
+		tomlContent := fmt.Sprintf(`provider = "openai"
+
+[providers.openai]
+base_url = "%s"
+api_key = "%s"
+model = "%s"
+`, bpURL, req.APIKey, model)
+		if err := os.WriteFile(filepath.Join(deepseekDir, "config.toml"), []byte(tomlContent), 0644); err != nil {
+			http.Error(w, `{"error":"failed to write config.toml"}`, 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "jcode":
+		jcodeDir := filepath.Join(homeDir, ".jcode")
+		if err := os.MkdirAll(jcodeDir, 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		jcodeBPURL := ensureV1(req.BaseURL)
+		jcodeModelsList := req.Models
+		if len(jcodeModelsList) == 0 && req.Model != "" {
+			jcodeModelsList = []string{req.Model}
+		}
+		if len(jcodeModelsList) == 0 {
+			jcodeModelsList = []string{"provider/model-id"}
+		}
+		jcodeDefaultModel := jcodeModelsList[0]
+		jcodeModelsToml := ""
+		for _, m := range jcodeModelsList {
+			jcodeModelsToml += fmt.Sprintf(`[[providers.9router.models]]
+id = "%s"
+`, m)
+		}
+		jcodeTOML := fmt.Sprintf(`[providers.9router]
+type = "openai-compatible"
+base_url = "%s"
+auth = "bearer"
+api_key_env = "JCODE_9ROUTER_API_KEY"
+env_file = "provider-9router.env"
+default_model = "%s"
+requires_api_key = true
+%s`, jcodeBPURL, jcodeDefaultModel, jcodeModelsToml)
+		if err := os.WriteFile(filepath.Join(jcodeDir, "config.toml"), []byte(jcodeTOML), 0644); err != nil {
+			http.Error(w, `{"error":"failed to write config.toml"}`, 500)
+			return
+		}
+		envDir := filepath.Join(homeDir, ".config", "jcode")
+		os.MkdirAll(envDir, 0755)
+		envContent := fmt.Sprintf("# jcode provider environment variables\nJCODE_9ROUTER_API_KEY=\"%s\"\n", req.APIKey)
+		os.WriteFile(filepath.Join(envDir, "provider-9router.env"), []byte(envContent), 0644)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "hermes":
+		hermesDir := filepath.Join(homeDir, ".hermes")
+		if err := os.MkdirAll(hermesDir, 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		hermesBPURL := ensureV1(req.BaseURL)
+		hermesModel := req.Model
+		if hermesModel == "" {
+			hermesModel = "provider/model-id"
+		}
+		yamlContent := fmt.Sprintf(`model:
+  default: "%s"
+  provider: "custom"
+  base_url: "%s"
+`, hermesModel, hermesBPURL)
+		if err := os.WriteFile(filepath.Join(hermesDir, "config.yaml"), []byte(yamlContent), 0644); err != nil {
+			http.Error(w, `{"error":"failed to write config.yaml"}`, 500)
+			return
+		}
+		envContent2 := fmt.Sprintf("OPENAI_API_KEY=%s\n", req.APIKey)
+		os.WriteFile(filepath.Join(hermesDir, ".env"), []byte(envContent2), 0644)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "droid":
+		droidDir := filepath.Join(homeDir, ".factory")
+		if err := os.MkdirAll(droidDir, 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		droidBPURL := ensureV1(req.BaseURL)
+		droidModelsList := req.Models
+		if len(droidModelsList) == 0 && req.Model != "" {
+			droidModelsList = []string{req.Model}
+		}
+		if len(droidModelsList) == 0 {
+			droidModelsList = []string{"provider/model-id"}
+		}
+		droidActiveM := req.ActiveModel
+		if droidActiveM == "" {
+			droidActiveM = droidModelsList[0]
+		}
+		currentDroid := map[string]interface{}{}
+		if data, err := os.ReadFile(filepath.Join(droidDir, "settings.json")); err == nil {
+			json.Unmarshal(data, &currentDroid)
+		}
+		var customModels []interface{}
+		if existing, ok := currentDroid["customModels"].([]interface{}); ok {
+			for _, cm := range existing {
+				if cmMap, ok2 := cm.(map[string]interface{}); ok2 {
+					id, _ := cmMap["id"].(string)
+					if strings.HasPrefix(id, "custom:9Router") {
+						continue
+					}
+					customModels = append(customModels, cm)
+				}
+			}
+		}
+		droidIdx := 0
+		for i, m := range droidModelsList {
+			if m == "" {
+				continue
+			}
+			entry := map[string]interface{}{
+				"model":             m,
+				"id":                fmt.Sprintf("custom:9Router-%d", i),
+				"index":             i,
+				"baseUrl":           droidBPURL,
+				"apiKey":            req.APIKey,
+				"displayName":       m,
+				"maxOutputTokens":   131072,
+				"noImageSupport":    false,
+				"provider":          "openai",
+			}
+			if m == droidActiveM {
+				entry["index"] = droidIdx
+				droidIdx++
+				customModels = append([]interface{}{entry}, customModels...)
+			} else {
+				entry["index"] = len(customModels) + droidIdx
+				droidIdx++
+				customModels = append(customModels, entry)
+			}
+		}
+		currentDroid["customModels"] = customModels
+		droidData, _ := json.MarshalIndent(currentDroid, "", "  ")
+		if err := os.WriteFile(filepath.Join(droidDir, "settings.json"), droidData, 0644); err != nil {
+			http.Error(w, `{"error":"failed to write settings.json"}`, 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "openclaw":
+		ocDir := filepath.Join(homeDir, ".openclaw")
+		if err := os.MkdirAll(ocDir, 0755); err != nil {
+			http.Error(w, `{"error":"cannot create config directory"}`, 500)
+			return
+		}
+		ocBPURL := ensureV1(req.BaseURL)
+		ocModel := req.Model
+		if ocModel == "" {
+			ocModel = "provider/model-id"
+		}
+		currentOC := map[string]interface{}{}
+		if data, err := os.ReadFile(filepath.Join(ocDir, "openclaw.json")); err == nil {
+			json.Unmarshal(data, &currentOC)
+		}
+		currentOC["models"] = map[string]interface{}{
+			"providers": map[string]interface{}{
+				"9router": map[string]interface{}{
+					"baseUrl": ocBPURL,
+					"apiKey":  req.APIKey,
+					"api":     "openai-completions",
+					"models": []map[string]string{
+						{"id": ocModel, "name": ocModel},
+					},
+				},
+			},
+		}
+		agentModels := map[string]string{}
+		if req.AgentModels != nil {
+			agentModels = req.AgentModels
+		}
+		agentsList := []map[string]interface{}{
+			{"id": "default", "model": "9router/" + ocModel, "primary": true},
+		}
+		for agID, agModel := range agentModels {
+			agentsList = append(agentsList, map[string]interface{}{
+				"id":    agID,
+				"model": "9router/" + agModel,
+			})
+		}
+		currentOC["agents"] = map[string]interface{}{
+			"defaults": map[string]interface{}{
+				"model": map[string]string{"primary": "9router/" + ocModel},
+				"models": map[string]interface{}{
+					"9router/" + ocModel: map[string]interface{}{},
+				},
+			},
+			"list": agentsList,
+		}
+		ocData, _ := json.MarshalIndent(currentOC, "", "  ")
+		if err := os.WriteFile(filepath.Join(ocDir, "openclaw.json"), ocData, 0644); err != nil {
+			http.Error(w, `{"error":"failed to write openclaw.json"}`, 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	default:
+		http.Error(w, `{"error":"unknown tool"}`, 404)
+	}
+}
+
+func (h *Handler) apiResetCliToolSettings(w http.ResponseWriter, r *http.Request, toolID string) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		http.Error(w, `{"error":"cannot determine home directory"}`, 500)
+		return
+	}
+	switch toolID {
+	case "claude":
+		os.Remove(filepath.Join(homeDir, ".claude", "settings.json"))
+	case "opencode":
+		os.Remove(filepath.Join(homeDir, ".config", "opencode", "opencode.json"))
+	case "cline":
+		os.Remove(filepath.Join(homeDir, ".cline", "data", "globalState.json"))
+		os.Remove(filepath.Join(homeDir, ".cline", "data", "secrets.json"))
+	case "codex":
+		os.Remove(filepath.Join(homeDir, ".codex", "config.toml"))
+		os.Remove(filepath.Join(homeDir, ".codex", "auth.json"))
+	case "kilocode":
+		os.Remove(filepath.Join(homeDir, ".local", "share", "kilo", "auth.json"))
+	case "deepseek":
+		os.Remove(filepath.Join(homeDir, ".deepseek", "config.toml"))
+	case "jcode":
+		os.Remove(filepath.Join(homeDir, ".jcode", "config.toml"))
+		os.Remove(filepath.Join(homeDir, ".config", "jcode", "provider-9router.env"))
+	case "hermes":
+		os.Remove(filepath.Join(homeDir, ".hermes", "config.yaml"))
+		os.Remove(filepath.Join(homeDir, ".hermes", ".env"))
+	case "droid":
+		droidPath := filepath.Join(homeDir, ".factory", "settings.json")
+		if data, err := os.ReadFile(droidPath); err == nil {
+			var cfg map[string]interface{}
+			if json.Unmarshal(data, &cfg) == nil {
+				if cms, ok := cfg["customModels"].([]interface{}); ok {
+					var kept []interface{}
+					for _, cm := range cms {
+						if cmMap, ok2 := cm.(map[string]interface{}); ok2 {
+							id, _ := cmMap["id"].(string)
+							if strings.HasPrefix(id, "custom:9Router") {
+								continue
+							}
+							kept = append(kept, cm)
+						}
+					}
+					if len(kept) == 0 {
+						delete(cfg, "customModels")
+					} else {
+						cfg["customModels"] = kept
+					}
+					out, _ := json.MarshalIndent(cfg, "", "  ")
+					os.WriteFile(droidPath, out, 0644)
+				}
+			}
+		}
+	case "openclaw":
+		ocPath := filepath.Join(homeDir, ".openclaw", "openclaw.json")
+		if data, err := os.ReadFile(ocPath); err == nil {
+			var cfg map[string]interface{}
+			if json.Unmarshal(data, &cfg) == nil {
+				delete(cfg, "models")
+				delete(cfg, "agents")
+				out, _ := json.MarshalIndent(cfg, "", "  ")
+				os.WriteFile(ocPath, out, 0644)
+			}
+		}
+	default:
+		http.Error(w, `{"error":"unknown tool"}`, 404)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (h *Handler) apiGetCliToolApiKey(w http.ResponseWriter, r *http.Request, keyID string) {
+	entry := config.GetApiKeyEntry(keyID)
+	if entry == nil {
+		http.Error(w, `{"error":"API key not found"}`, 404)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"key": entry.Key})
+}
+
+// ---- Model Test ----
+func (h *Handler) apiTestModel(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Model string `json:"model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Invalid JSON"})
+		return
+	}
+	if req.Model == "" {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "model is required"})
+		return
+	}
+
+	port := config.GetPort()
+	host := config.GetHost()
+	if host == "0.0.0.0" {
+		host = "127.0.0.1"
+	}
+	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", host, port)
+
+	payload := map[string]interface{}{
+		"model":      req.Model,
+		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		"max_tokens": 1,
+		"stream":     false,
+	}
+	body, _ := json.Marshal(payload)
+
+	httpReq, _ := http.NewRequest("POST", url, strings.NewReader(string(body)))
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	if config.IsApiKeyRequired() {
+		var apiKey string
+		if config.HasApiKeys() {
+			for _, entry := range config.ListApiKeys() {
+				if entry.Enabled {
+					apiKey = entry.Key
+					break
+				}
+			}
+		}
+		if apiKey == "" {
+			apiKey = config.GetApiKey()
+		}
+		if apiKey != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	start := time.Now()
+	resp, err := client.Do(httpReq)
+	latency := time.Since(start).Milliseconds()
+	latencyMs := latency
+	if latencyMs < 0 {
+		latencyMs = 0
+	}
+
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": false, "latencyMs": latencyMs, "error": err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": true, "latencyMs": latencyMs,
+		})
+	} else {
+		errMsg := fmt.Sprintf("HTTP %d", resp.StatusCode)
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&errResp) == nil && errResp.Error != "" {
+			errMsg = errResp.Error
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": false, "latencyMs": latencyMs, "error": errMsg,
+		})
+	}
+}
+
+// ---- MITM Handlers ----
+var (
+	mitmRunning bool
+	mitmMu      sync.RWMutex
+)
+
+type mitmStatusResp struct {
+	Running  bool              `json:"running"`
+	Cert     bool              `json:"cert"`
+	DNS      map[string]bool   `json:"dns"`
+}
+
+func (h *Handler) apiMitmStatus(w http.ResponseWriter, r *http.Request) {
+	mitmMu.RLock()
+	running := mitmRunning
+	mitmMu.RUnlock()
+
+	// Check DNS status for each tool
+	dnsStatus := map[string]bool{
+		"antigravity": false,
+		"copilot":     false,
+		"kiro":        false,
+	}
+	hostsData, err := os.ReadFile("/etc/hosts")
+	if err == nil {
+		hostsStr := string(hostsData)
+		if strings.Contains(hostsStr, "# 9router antigravity") {
+			dnsStatus["antigravity"] = true
+		}
+		if strings.Contains(hostsStr, "# 9router copilot") {
+			dnsStatus["copilot"] = true
+		}
+		if strings.Contains(hostsStr, "# 9router kiro") {
+			dnsStatus["kiro"] = true
+		}
+	}
+
+	json.NewEncoder(w).Encode(mitmStatusResp{
+		Running: running,
+		Cert:    false,
+		DNS:     dnsStatus,
+	})
+}
+
+func (h *Handler) apiMitmStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		APIKey      string `json:"apiKey"`
+		SudoPass    string `json:"sudoPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
+	}
+	if req.APIKey == "" {
+		http.Error(w, `{"error":"API key required"}`, 400)
+		return
+	}
+
+	mitmMu.Lock()
+	mitmRunning = true
+	mitmMu.Unlock()
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "MITM server started"})
+}
+
+func (h *Handler) apiMitmStop(w http.ResponseWriter, r *http.Request) {
+	mitmMu.Lock()
+	mitmRunning = false
+	mitmMu.Unlock()
+
+	// Remove all DNS entries
+	removeMitmDnsEntries()
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "MITM server stopped"})
+}
+
+func (h *Handler) apiMitmToggleDns(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Tool        string `json:"tool"`
+		Action      string `json:"action"` // "enable" or "disable"
+		SudoPass    string `json:"sudoPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
+	}
+	validTools := map[string]bool{"antigravity": true, "copilot": true, "kiro": true}
+	if !validTools[req.Tool] {
+		http.Error(w, `{"error":"unknown tool"}`, 400)
+		return
+	}
+
+	if req.Action == "enable" {
+		addMitmDnsEntry(req.Tool)
+	} else if req.Action == "disable" {
+		removeMitmDnsEntry(req.Tool)
+	} else {
+		http.Error(w, `{"error":"action must be enable or disable"}`, 400)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (h *Handler) apiMitmSaveAliases(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Tool     string            `json:"tool"`
+		Mappings map[string]string `json:"mappings"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
+	}
+	homeDir, _ := os.UserHomeDir()
+	mitmDir := filepath.Join(homeDir, ".superkiro", "mitm")
+	os.MkdirAll(mitmDir, 0755)
+	aliasesPath := filepath.Join(mitmDir, "aliases.json")
+
+	aliases := map[string]map[string]string{}
+	if data, err := os.ReadFile(aliasesPath); err == nil {
+		json.Unmarshal(data, &aliases)
+	}
+	aliases[req.Tool] = req.Mappings
+	data, _ := json.MarshalIndent(aliases, "", "  ")
+	os.WriteFile(aliasesPath, data, 0644)
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// DNS helpers
+var mitmToolHosts = map[string][]string{
+	"antigravity": {"daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"},
+	"copilot":     {"api.individual.githubcopilot.com"},
+	"kiro":        {"runtime.us-east-1.kiro.dev", "q.us-east-1.amazonaws.com", "codewhisperer.us-east-1.amazonaws.com"},
+}
+
+func addMitmDnsEntry(tool string) {
+	hosts, ok := mitmToolHosts[tool]
+	if !ok {
+		return
+	}
+	marker := "# 9router " + tool
+	entries := ""
+	for _, h := range hosts {
+		entries += "127.0.0.1 " + h + " " + marker + "\n"
+	}
+
+	data, err := os.ReadFile("/etc/hosts")
+	if err != nil {
+		return
+	}
+	content := string(data)
+
+	// Remove old entries for this tool
+	lines := strings.Split(content, "\n")
+	var newLines []string
+	for _, line := range lines {
+		if strings.Contains(line, marker) {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+	newContent := strings.Join(newLines, "\n") + "\n" + entries
+	os.WriteFile("/etc/hosts.tmp", []byte(newContent), 0644)
+	// Try to copy with sudo, fall back to direct write
+	if err := os.Rename("/etc/hosts.tmp", "/etc/hosts"); err != nil {
+		os.WriteFile("/etc/hosts", []byte(newContent), 0644)
+	}
+}
+
+func removeMitmDnsEntry(tool string) {
+	marker := "# 9router " + tool
+	data, err := os.ReadFile("/etc/hosts")
+	if err != nil {
+		return
+	}
+	lines := strings.Split(string(data), "\n")
+	var newLines []string
+	for _, line := range lines {
+		if strings.Contains(line, marker) {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+	newContent := strings.Join(newLines, "\n")
+	os.WriteFile("/etc/hosts.tmp", []byte(newContent), 0644)
+	os.Rename("/etc/hosts.tmp", "/etc/hosts")
+}
+
+func removeMitmDnsEntries() {
+	for tool := range mitmToolHosts {
+		removeMitmDnsEntry(tool)
+	}
+}
+
+// ---- Copilot settings backend ----
+func (h *Handler) apiCopilotSettings(w http.ResponseWriter, r *http.Request) {
+	homeDir, _ := os.UserHomeDir()
+	copilotDir := filepath.Join(homeDir, ".config", "Code", "User")
+	modelsPath := filepath.Join(copilotDir, "chatLanguageModels.json")
+
+	switch r.Method {
+	case "GET":
+		var cfg struct {
+			Installed bool                   `json:"installed"`
+			Models    []map[string]interface{} `json:"models"`
+			Has9Router bool                  `json:"has9Router"`
+		}
+		if data, err := os.ReadFile(modelsPath); err == nil {
+			var models []map[string]interface{}
+			if json.Unmarshal(data, &models) == nil {
+				cfg.Models = models
+				for _, m := range models {
+					if title, _ := m["title"].(string); strings.Contains(strings.ToLower(title), "superkiro") {
+						cfg.Has9Router = true
+						break
+					}
+				}
+			}
+		}
+		cfg.Installed = true
+		json.NewEncoder(w).Encode(cfg)
+
+	case "POST":
+		var req struct {
+			BaseURL string   `json:"baseUrl"`
+			APIKey  string   `json:"apiKey"`
+			Models  []string `json:"models"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid request"}`, 400)
+			return
+		}
+		os.MkdirAll(copilotDir, 0755)
+
+		var existing []map[string]interface{}
+		if data, err := os.ReadFile(modelsPath); err == nil {
+			json.Unmarshal(data, &existing)
+		}
+
+		// Remove old superkiro entries
+		var kept []map[string]interface{}
+		for _, m := range existing {
+			title, _ := m["title"].(string)
+			if strings.Contains(strings.ToLower(title), "superkiro") {
+				continue
+			}
+			kept = append(kept, m)
+		}
+
+		modelsList := req.Models
+		if len(modelsList) == 0 {
+			modelsList = []string{"provider/model-id"}
+		}
+		for _, m := range modelsList {
+			kept = append(kept, map[string]interface{}{
+				"title":         "SuperKiro",
+				"provider":      "openai",
+				"model":         m,
+				"apiKey":        req.APIKey,
+				"baseUrl":       req.BaseURL,
+			})
+		}
+
+		data, _ := json.MarshalIndent(kept, "", "  ")
+		if err := os.WriteFile(modelsPath, data, 0644); err != nil {
+			http.Error(w, `{"error":"failed to write settings"}`, 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	case "DELETE":
+		var existing []map[string]interface{}
+		if data, err := os.ReadFile(modelsPath); err == nil {
+			json.Unmarshal(data, &existing)
+		}
+		var kept []map[string]interface{}
+		for _, m := range existing {
+			title, _ := m["title"].(string)
+			if strings.Contains(strings.ToLower(title), "superkiro") {
+				continue
+			}
+			kept = append(kept, m)
+		}
+		data, _ := json.MarshalIndent(kept, "", "  ")
+		os.WriteFile(modelsPath, data, 0644)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}
 }
 
