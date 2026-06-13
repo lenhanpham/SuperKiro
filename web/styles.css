@@ -2402,6 +2402,167 @@ img.brand-icon {
   margin-top: 0.1875rem;
 }
 
+/* CLI Tools section */
+.cli-tools-section {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+}
+.cli-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.cli-tool-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+.cli-tool-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.cli-tool-card:active {
+  transform: scale(0.98);
+}
+.cli-tool-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+  background: var(--card);
+  flex: none;
+  font-size: 1rem;
+}
+.dark .cli-tool-icon {
+  background: var(--muted);
+}
+.cli-tool-info {
+  flex: 1;
+  min-width: 0;
+}
+.cli-tool-name {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  line-height: 1.25;
+}
+.cli-tool-desc {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  margin-top: 0.125rem;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cli-tool-status {
+  flex: none;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.cli-tool-status-connected {
+  background: rgba(34,197,94,0.12);
+  color: #16a34a;
+}
+.cli-tool-status-notconfigured {
+  background: rgba(234,179,8,0.12);
+  color: #ca8a04;
+}
+
+/* CLI config modal */
+#cliToolConfigStatus.success {
+  background: rgba(34,197,94,0.1);
+  color: #16a34a;
+  border: 1px solid rgba(34,197,94,0.25);
+}
+#cliToolConfigStatus.error {
+  background: rgba(239,68,68,0.1);
+  color: #dc2626;
+  border: 1px solid rgba(239,68,68,0.25);
+}
+
+/* CLI manual config modal */
+.cli-manual-config-entry {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.cli-manual-config-entry:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.cli-manual-config-filename {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cli-manual-config-code {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.875rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--foreground);
+  max-height: 300px;
+  overflow-y: auto;
+}
+.cli-manual-config-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+}
+.cli-manual-config-copy-btn:hover {
+  background: var(--muted);
+}
+.cli-manual-config-hint {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 600px) {
+  .cli-tools-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Detail modal */
 .detail-section {
   margin-bottom: 1.25rem;

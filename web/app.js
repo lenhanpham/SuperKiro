@@ -2881,6 +2881,346 @@
     qsa('.tab-content').forEach(c => c.classList.add('hidden'));
     $('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');
     if (tab === 'combos') { loadCombos(); }
+    if (tab === 'api') { renderCliTools(); }
+  }
+
+  // CLI Tools
+  const CLI_TOOLS = {
+    claude: {
+      nameKey: 'cliTools.toolClaude',
+      descKey: 'cliTools.descClaude',
+      icon: 'fa-robot',
+      configType: 'env',
+      manualConfigs: function (endpoint, apiKey, model) {
+        const env = { ANTHROPIC_BASE_URL: endpoint, ANTHROPIC_AUTH_TOKEN: apiKey };
+        if (model) env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
+        return [{ filename: '~/.claude/settings.json', content: JSON.stringify({ hasCompletedOnboarding: true, env: env }, null, 2) }];
+      },
+      writeSettings: function (endpoint, apiKey, model) {
+        const env = { ANTHROPIC_BASE_URL: endpoint, ANTHROPIC_AUTH_TOKEN: apiKey };
+        if (model) env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
+        return { env: env };
+      }
+    },
+    opencode: {
+      nameKey: 'cliTools.toolOpenCode',
+      descKey: 'cliTools.descOpenCode',
+      icon: 'fa-code',
+      configType: 'json',
+      manualConfigs: function (endpoint, apiKey, model) {
+        const providerConfig = {
+          provider: {
+            superkiro: {
+              npm: '@ai-sdk/openai-compatible',
+              options: { baseURL: endpoint, apiKey: apiKey },
+              models: model ? { [model]: { name: model, modalities: { input: ['text', 'image'], output: ['text'] } } } : {}
+            }
+          },
+          model: model ? 'superkiro/' + model : 'superkiro/provider/model',
+          agent: {
+            explorer: { description: 'Fast explorer subagent', mode: 'subagent', model: model ? 'superkiro/' + model : 'superkiro/provider/model' }
+          }
+        };
+        return [{ filename: '~/.config/opencode/opencode.json', content: JSON.stringify(providerConfig, null, 2) }];
+      },
+      writeSettings: function (endpoint, apiKey, model) {
+        return { endpoint, apiKey, model, toolId: 'opencode' };
+      }
+    },
+    cline: {
+      nameKey: 'cliTools.toolCline',
+      descKey: 'cliTools.descCline',
+      icon: 'fa-brain',
+      configType: 'json',
+      manualConfigs: function (endpoint, apiKey, model) {
+        const baseUrl = endpoint.replace(/\/v1\/?$/, '');
+        return [
+          { filename: '~/.cline/data/globalState.json', content: JSON.stringify({ actModeApiProvider: 'openai', planModeApiProvider: 'openai', openAiBaseUrl: baseUrl, openAiModelId: model || 'provider/model', planModeOpenAiModelId: model || 'provider/model' }, null, 2) },
+          { filename: '~/.cline/data/secrets.json', content: JSON.stringify({ openAiApiKey: apiKey }, null, 2) }
+        ];
+      },
+      writeSettings: function (endpoint, apiKey, model) {
+        return { endpoint, apiKey, model, toolId: 'cline' };
+      }
+    },
+    codex: {
+      nameKey: 'cliTools.toolCodex',
+      descKey: 'cliTools.descCodex',
+      icon: 'fa-terminal',
+      configType: 'json',
+      manualConfigs: function (endpoint, apiKey, model) {
+        return [
+          { filename: '~/.codex/config.toml', content: 'model = "' + (model || 'provider/model') + '"\nmodel_provider = "superkiro"\n\n[model_providers.superkiro]\nname = "SuperKiro"\nbase_url = "' + endpoint + '"\nwire_api = "responses"\n\n[agents.subagent]\nmodel = "' + (model || 'provider/model') + '"\n' },
+          { filename: '~/.codex/auth.json', content: JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: apiKey }, null, 2) }
+        ];
+      },
+      writeSettings: function (endpoint, apiKey, model) {
+        return { endpoint, apiKey, model, toolId: 'codex' };
+      }
+    },
+    kilocode: {
+      nameKey: 'cliTools.toolKiloCode',
+      descKey: 'cliTools.descKiloCode',
+      icon: 'fa-bolt',
+      configType: 'json',
+      manualConfigs: function (endpoint, apiKey, model) {
+        return [{ filename: '~/.local/share/kilo/auth.json', content: JSON.stringify({ 'openai-compatible': { type: 'api-key', apiKey: apiKey, baseUrl: endpoint, model: model || 'provider/model' } }, null, 2) }];
+      },
+      writeSettings: function (endpoint, apiKey, model) {
+        return { endpoint, apiKey, model, toolId: 'kilocode' };
+      }
+    },
+    continue: {
+      nameKey: 'cliTools.toolContinue',
+      descKey: 'cliTools.descContinue',
+      icon: 'fa-arrow-right-arrow-left',
+      configType: 'guide',
+      manualConfigs: function (endpoint, apiKey, model) {
+        return [{
+          filename: '~/.continue/config.json',
+          content: JSON.stringify({
+            models: [{
+              title: 'SuperKiro',
+              provider: 'openai',
+              model: model || 'provider/model',
+              apiKey: apiKey,
+              baseUrl: endpoint
+            }],
+            tabAutocompleteModel: {
+              title: 'SuperKiro',
+              provider: 'openai',
+              model: model || 'provider/model',
+              apiKey: apiKey,
+              baseUrl: endpoint
+            }
+          }, null, 2)
+        }];
+      },
+      writeSettings: null
+    },
+    roo: {
+      nameKey: 'cliTools.toolRoo',
+      descKey: 'cliTools.descRoo',
+      icon: 'fa-helmet-safety',
+      configType: 'guide',
+      manualConfigs: function (endpoint, apiKey, model) {
+        return [{
+          filename: '~/.roo/config.json',
+          content: JSON.stringify({
+            apiProvider: 'openai',
+            openAiBaseUrl: endpoint,
+            openAiModelId: model || 'provider/model',
+            openAiApiKey: apiKey
+          }, null, 2)
+        }];
+      },
+      writeSettings: null
+    }
+  };
+
+  let currentCliToolId = null;
+
+  function renderCliTools() {
+    const grid = $('cliToolsGrid');
+    if (!grid) return;
+    if (grid.children.length > 0) return;
+    const base = baseUrl || location.origin;
+    grid.innerHTML = Object.entries(CLI_TOOLS).map(([id, tool]) => {
+      const statusClass = 'cli-tool-status-notconfigured';
+      const statusLabel = t('cliTools.notConfigured');
+      return '<div class="cli-tool-card" data-cli-tool="' + id + '">' +
+        '<span class="cli-tool-icon"><i class="fa-solid ' + tool.icon + '"></i></span>' +
+        '<div class="cli-tool-info">' +
+        '<div class="cli-tool-name" data-i18n="' + tool.nameKey + '"></div>' +
+        '<div class="cli-tool-desc" data-i18n="' + tool.descKey + '"></div>' +
+        '</div>' +
+        '<span class="cli-tool-status ' + statusClass + '">' + statusLabel + '</span>' +
+        '</div>';
+    }).join('');
+    applyTranslations();
+    qsa('.cli-tool-card').forEach(card => {
+      card.addEventListener('click', () => openCliToolConfig(card.dataset.cliTool));
+    });
+  }
+
+  function openCliToolConfig(toolId) {
+    currentCliToolId = toolId;
+    const tool = CLI_TOOLS[toolId];
+    if (!tool) return;
+    const title = $('cliToolConfigTitle');
+    title.textContent = t(tool.nameKey);
+    title.dataset.i18n = tool.nameKey;
+    const status = $('cliToolConfigStatus');
+    status.classList.add('hidden');
+    status.textContent = '';
+    status.className = 'hidden';
+    const applyBtn = $('cliApplyBtn');
+    applyBtn.disabled = false;
+    applyBtn.textContent = t('cliTools.apply');
+    const manualBtn = $('cliManualConfigBtn');
+    manualBtn.style.display = tool.writeSettings === null ? 'none' : '';
+    const resetBtn = $('cliResetConfigBtn');
+    resetBtn.style.display = tool.writeSettings === null ? 'none' : '';
+    const epSelect = $('cliEndpointSelect');
+    const localUrl = (baseUrl || location.origin) + '/v1';
+    epSelect.options[0].textContent = localUrl;
+    epSelect.value = 'local';
+    $('cliCustomEndpoint').classList.add('hidden');
+    $('cliCustomEndpoint').value = '';
+    const akSelect = $('cliApiKeySelect');
+    while (akSelect.options.length > 2) akSelect.remove(2);
+    let firstKey = '';
+    (apiKeysCache || []).forEach(function (k) {
+      const opt = document.createElement('option');
+      opt.value = k.key;
+      opt.textContent = k.keyMasked || k.key;
+      akSelect.appendChild(opt);
+      if (!firstKey) firstKey = k.key;
+    });
+    akSelect.value = firstKey || '';
+    $('cliCustomApiKey').classList.add('hidden');
+    $('cliCustomApiKey').value = '';
+    $('cliModelInput').value = '';
+    openDialog('cliToolConfigModal');
+  }
+
+  function getCliEffectiveEndpoint() {
+    const epSelect = $('cliEndpointSelect');
+    if (epSelect.value === 'custom') {
+      return $('cliCustomEndpoint').value.trim();
+    }
+    return epSelect.options[epSelect.selectedIndex].textContent;
+  }
+
+  function getCliEffectiveApiKey() {
+    const akSelect = $('cliApiKeySelect');
+    if (akSelect.value === 'custom') {
+      return $('cliCustomApiKey').value.trim();
+    }
+    return akSelect.value;
+  }
+
+  function getCliEffectiveModel() {
+    return $('cliModelInput').value.trim();
+  }
+
+  function showCliManualConfig(toolId) {
+    const tool = CLI_TOOLS[toolId];
+    if (!tool) return;
+    const endpoint = getCliEffectiveEndpoint();
+    const apiKey = getCliEffectiveApiKey();
+    const model = getCliEffectiveModel();
+    const configs = tool.manualConfigs(endpoint, apiKey || 'sk-your-api-key', model || 'provider/model');
+    const body = $('cliManualConfigBody');
+    body.innerHTML = '<p class="cli-manual-config-hint" data-i18n="cliTools.manualConfigHint"></p>';
+    applyTranslations();
+    configs.forEach(function (cfg) {
+      const div = document.createElement('div');
+      div.className = 'cli-manual-config-entry';
+      const filenameDiv = document.createElement('div');
+      filenameDiv.className = 'cli-manual-config-filename';
+      filenameDiv.innerHTML = '<i class="fa-regular fa-file-lines"></i> ' + escapeHtml(cfg.filename) +
+        ' <button class="cli-manual-config-copy-btn" type="button"><i class="fa-regular fa-copy"></i> <span data-i18n="cliTools.copyConfig"></span></button>';
+      div.appendChild(filenameDiv);
+      const code = document.createElement('pre');
+      code.className = 'cli-manual-config-code';
+      code.textContent = cfg.content;
+      div.appendChild(code);
+      body.appendChild(div);
+    });
+    applyTranslations();
+    body.querySelectorAll('.cli-manual-config-copy-btn').forEach(function (btn, i) {
+      btn.addEventListener('click', function () {
+        var code = body.querySelectorAll('.cli-manual-config-code')[i];
+        if (!code) return;
+        copyText(code.textContent).then(function () {
+          var span = btn.querySelector('span');
+          if (span) span.textContent = t('cliTools.copied');
+          setTimeout(function () {
+            if (span) span.textContent = t('cliTools.copyConfig');
+          }, 2000);
+        }).catch(function () { });
+      });
+    });
+    openDialog('cliManualConfigModal');
+  }
+
+  async function applyCliSettings() {
+    const toolId = currentCliToolId;
+    if (!toolId) return;
+    const tool = CLI_TOOLS[toolId];
+    if (!tool || !tool.writeSettings) return;
+    const endpoint = getCliEffectiveEndpoint();
+    const apiKey = getCliEffectiveApiKey();
+    const model = getCliEffectiveModel();
+    if (!endpoint) {
+      const status = $('cliToolConfigStatus');
+      status.className = 'error';
+      status.textContent = 'Please select an endpoint';
+      status.classList.remove('hidden');
+      return;
+    }
+    const applyBtn = $('cliApplyBtn');
+    applyBtn.disabled = true;
+    applyBtn.textContent = t('cliTools.applying');
+    const status = $('cliToolConfigStatus');
+    status.className = 'hidden';
+    status.textContent = '';
+    try {
+      const payload = tool.writeSettings(endpoint, apiKey || null, model || null);
+      const res = await api('/cli-tools/' + toolId, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        status.className = 'success';
+        status.textContent = t('cliTools.configSuccess');
+        status.classList.remove('hidden');
+        updateCliToolStatus(toolId, true);
+      } else {
+        const d = await res.json().catch(function () { return { error: 'HTTP ' + res.status }; });
+        status.className = 'error';
+        status.textContent = (d && d.error) || t('cliTools.configFailed');
+        status.classList.remove('hidden');
+      }
+    } catch (e) {
+      status.className = 'error';
+      status.textContent = e.message || t('cliTools.configFailed');
+      status.classList.remove('hidden');
+    } finally {
+      applyBtn.disabled = false;
+      applyBtn.textContent = t('cliTools.apply');
+    }
+  }
+
+  async function resetCliSettings() {
+    const toolId = currentCliToolId;
+    if (!toolId) return;
+    const confirmed = await confirmAction('Reset configuration for this tool?', { confirmText: 'Reset', variant: 'danger' });
+    if (!confirmed) return;
+    try {
+      const res = await api('/cli-tools/' + toolId, { method: 'DELETE' });
+      if (res.ok) {
+        const status = $('cliToolConfigStatus');
+        status.className = 'success';
+        status.textContent = 'Configuration reset';
+        status.classList.remove('hidden');
+        updateCliToolStatus(toolId, false);
+      }
+    } catch (e) { }
+  }
+
+  function updateCliToolStatus(toolId, connected) {
+    const card = document.querySelector('.cli-tool-card[data-cli-tool="' + toolId + '"]');
+    if (!card) return;
+    const badge = card.querySelector('.cli-tool-status');
+    if (connected) {
+      badge.className = 'cli-tool-status cli-tool-status-connected';
+      badge.textContent = t('cliTools.connected');
+    } else {
+      badge.className = 'cli-tool-status cli-tool-status-notconfigured';
+      badge.textContent = t('cliTools.notConfigured');
+    }
   }
 
   // Event wiring
@@ -2901,6 +3241,34 @@
           : '<i class="fa-solid fa-eye"></i>';
       });
     }
+  }
+
+  function bindCliToolEvents() {
+    $('cliToolConfigClose').addEventListener('click', () => closeDialog('cliToolConfigModal'));
+    $('cliManualConfigClose').addEventListener('click', () => closeDialog('cliManualConfigModal'));
+    bindDialogBackdropClose('cliToolConfigModal', () => closeDialog('cliToolConfigModal'));
+    bindDialogBackdropClose('cliManualConfigModal', () => closeDialog('cliManualConfigModal'));
+
+    $('cliEndpointSelect').addEventListener('change', function () {
+      $('cliCustomEndpoint').classList.toggle('hidden', this.value !== 'custom');
+    });
+    $('cliApiKeySelect').addEventListener('change', function () {
+      $('cliCustomApiKey').classList.toggle('hidden', this.value !== 'custom');
+    });
+    $('cliSelectModelBtn').addEventListener('click', function () {
+      if (typeof openModelPicker === 'function') {
+        window.__cliModelCallback = function (model) {
+          $('cliModelInput').value = model;
+          closeDialog('modelPickerModal');
+        };
+        openModelPicker();
+      }
+    });
+    $('cliApplyBtn').addEventListener('click', applyCliSettings);
+    $('cliManualConfigBtn').addEventListener('click', function () {
+      if (currentCliToolId) showCliManualConfig(currentCliToolId);
+    });
+    $('cliResetConfigBtn').addEventListener('click', resetCliSettings);
   }
 
   function bindShellEvents() {
@@ -3093,6 +3461,7 @@
     bindModalEvents();
     bindDetailEvents();
     bindTestEvents();
+    bindCliToolEvents();
   }
 
   // Init

@@ -7,21 +7,30 @@
 </p>
 
 # SuperKiro
-<p align="center">
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
-</p>
-<p align="center">
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://www.docker.com/)
-</p>
-<p align="center">
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-</p>
-
-Chuyển đổi tài khoản Kiro thành dịch vụ API tương thích OpenAI / Anthropic.
-
-[English](README.md) | [中文](README_CN.md) | Tiếng Việt
-
-Nếu dự án này hữu ích với bạn, hãy cho một Star nhé.
+<div align="center">
+  <a href="https://go.dev/">
+    <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go" alt="Go Version">
+  </a>
+</div>
+<div align="center">
+  <a href="https://www.docker.com/">
+    <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker" alt="Docker">
+  </a>
+</div>
+<div align="center">
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
+  </a>
+</div>
+<div align="center">
+  <p>Chuyển đổi tài khoản Kiro thành dịch vụ API tương thích OpenAI / Anthropic.</p>
+</div>
+<div align="center">
+  <a href="README.md">English</a> | <a href="README_CN.md">中文</a> | Tiếng Việt
+</div>
+<div align="center">
+  <p>Nếu dự án này hữu ích với bạn, hãy cho một Star nhé.</p>
+</div>
 
 
 ## Tính năng
