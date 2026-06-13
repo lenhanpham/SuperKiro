@@ -1,3 +1,11 @@
+<p align="center">
+  <a href="https://github.com/lenhanpham/SuperKiro">
+    <picture>
+      <img src="web/icon.svg" alt="SuperKiro" style="width: 50%;">
+    </picture>
+  </a>
+</p>
+
 # SuperKiro
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
