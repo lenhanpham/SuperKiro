@@ -1,7 +1,7 @@
 <p align="center">
   <a href="https://github.com/lenhanpham/SuperKiro">
     <picture>
-      <img src="web/icon.svg" alt="SuperKiro" style="width: 50%;">
+      <img src="web/icon.svg" alt="SuperKiro" style="width: 25%;">
     </picture>
   </a>
 </p>
