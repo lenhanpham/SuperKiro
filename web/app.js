@@ -2068,7 +2068,7 @@
     if (!name) { toast(t('combos.nameRequired'), 'error'); return; }
     if (name.includes('/')) { toast(t('combos.nameSlash'), 'error'); return; }
     const models = comboModelRows.map(m => m.trim()).filter(Boolean);
-    if (models.length < 2) { toast(t('combos.minModels'), 'error'); return; }
+    if (models.length < 1) { toast(t('combos.minModels'), 'error'); return; }
     try {
       let res;
       if (comboEditId) {
