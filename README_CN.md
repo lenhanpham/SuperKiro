@@ -11,13 +11,9 @@
   <a href="https://go.dev/">
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go" alt="Go Version">
   </a>
-</div>
-<div align="center">
   <a href="https://www.docker.com/">
     <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker" alt="Docker">
   </a>
-</div>
-<div align="center">
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
   </a>

@@ -2044,6 +2044,11 @@
   }
 
   function toggleModelInPicker(modelId) {
+    if (typeof window.__cliModelCallback === 'function') {
+      window.__cliModelCallback(modelId);
+      window.__cliModelCallback = null;
+      return;
+    }
     if (pickerSelection.has(modelId)) {
       pickerSelection.delete(modelId);
     } else {
@@ -2053,6 +2058,9 @@
   }
 
   function confirmModelPicker() {
+    if (typeof window.__cliModelCallback === 'function') {
+      return;
+    }
     comboModelRows = Array.from(pickerSelection);
     renderComboModelRows();
     closeDialog('modelPickerModal');
@@ -2881,7 +2889,7 @@
     qsa('.tab-content').forEach(c => c.classList.add('hidden'));
     $('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');
     if (tab === 'combos') { loadCombos(); }
-    if (tab === 'api') { renderCliTools(); }
+    if (tab === 'api') { renderCliTools(); if (apiKeysCache.length === 0) loadApiKeys(); }
   }
 
   // CLI Tools
