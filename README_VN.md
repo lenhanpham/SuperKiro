@@ -7,7 +7,7 @@
 </p>
 
 # SuperKiro
-
+<p align="center">
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -17,6 +17,7 @@ Chuyển đổi tài khoản Kiro thành dịch vụ API tương thích OpenAI /
 [English](README.md) | [中文](README_CN.md) | Tiếng Việt
 
 Nếu dự án này hữu ích với bạn, hãy cho một Star nhé.
+</p>
 
 ## Tính năng
 

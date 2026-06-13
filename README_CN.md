@@ -7,7 +7,7 @@
 </p>
 
 # SuperKiro
-
+<p align="center">
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -17,6 +17,7 @@
 [English](README.md) | 中文 | [Tiếng Việt](README_VN.md)
 
 如果这个项目帮到了你，欢迎点个 Star 支持一下。
+</p>
 
 ## 功能特性
 
