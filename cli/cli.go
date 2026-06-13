@@ -18,8 +18,8 @@ import (
 
 // ShowMenu displays the interactive management menu.
 // addr is the server address; shutdown is called on Exit.
-func ShowMenu(addr string, shutdown func()) {
-	showMenu(addr, shutdown)
+func ShowMenu(addr string, pidPath string, shutdown func()) {
+	showMenu(addr, pidPath, shutdown)
 }
 
 // RunDaemon starts SuperKiro in background daemon mode, logging to a file,

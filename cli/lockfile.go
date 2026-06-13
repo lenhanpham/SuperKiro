@@ -11,6 +11,9 @@ import (
 )
 
 func PIDPath(configPath string) string {
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Join(filepath.Dir(exe), "data", "superkiro.pid")
+	}
 	return filepath.Join(filepath.Dir(configPath), "superkiro.pid")
 }
 
@@ -54,6 +57,9 @@ func CheckAndKillExisting(pidPath string) bool {
 }
 
 func WritePID(pidPath string) error {
+	if err := os.MkdirAll(filepath.Dir(pidPath), 0755); err != nil {
+		return err
+	}
 	return os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0644)
 }
 

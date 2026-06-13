@@ -13,7 +13,7 @@ import (
 	"syscall"
 )
 
-func showMenu(addr string, shutdown func()) {
+func showMenu(addr string, pidPath string, shutdown func()) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
@@ -49,7 +49,7 @@ func showMenu(addr string, shutdown func()) {
 		case "2":
 			// Release the port first so the daemon child can claim it.
 			shutdown()
-			spawnBackground()
+			spawnBackground(pidPath)
 			return
 
 		case "3":
@@ -95,13 +95,15 @@ func openBrowser(url string) {
 	cmd.Start()
 }
 
-func spawnBackground() {
+func spawnBackground(pidPath string) {
 	exe, err := os.Executable()
 	if err != nil {
 		fmt.Printf("\n  Cannot determine executable path: %v\n", err)
 		pause("\n  Press Enter to return to menu...")
 		return
 	}
+
+	os.Remove(pidPath)
 
 	args := []string{"--daemon"}
 	for _, a := range os.Args[1:] {

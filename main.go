@@ -83,7 +83,7 @@ func main() {
 	cli.WritePID(pidPath)
 
 	if useMenu && cli.IsTerminal() {
-		cli.ShowMenu(addr, func() {
+		cli.ShowMenu(addr, pidPath, func() {
 			shutdownServer(srv)
 		})
 	} else {
