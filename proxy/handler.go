@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os/exec"
 	"superkiro/auth"
 	"superkiro/config"
 	"superkiro/logger"
@@ -21,6 +22,413 @@ import (
 )
 
 const tokenRefreshSkewSeconds int64 = 120
+
+var (
+	cliToolConfigured   = map[string]bool{}
+	cliToolConfiguredMu sync.RWMutex
+)
+
+type CliToolSettings struct {
+	BaseURL       string            `json:"baseUrl"`
+	APIKey        string            `json:"apiKey"`
+	Model         string            `json:"model"`
+	Models        []string          `json:"models"`
+	ActiveModel   string            `json:"activeModel"`
+	SubagentModel string            `json:"subagentModel"`
+	Env           map[string]string `json:"env"`
+	AgentModels   map[string]string `json:"agentModels"`
+}
+
+var (
+	cliToolSettings   = map[string]*CliToolSettings{}
+	cliToolSettingsMu sync.RWMutex
+)
+
+func setCliToolSettings(toolID string, s *CliToolSettings) {
+	cliToolSettingsMu.Lock()
+	cliToolSettings[toolID] = s
+	cliToolSettingsMu.Unlock()
+}
+
+func getCliToolSettings(toolID string) *CliToolSettings {
+	cliToolSettingsMu.RLock()
+	defer cliToolSettingsMu.RUnlock()
+	return cliToolSettings[toolID]
+}
+
+func delCliToolSettings(toolID string) {
+	cliToolSettingsMu.Lock()
+	delete(cliToolSettings, toolID)
+	cliToolSettingsMu.Unlock()
+}
+
+func markCliToolConfigured(toolID string, configured bool) {
+	cliToolConfiguredMu.Lock()
+	if configured {
+		cliToolConfigured[toolID] = true
+	} else {
+		delete(cliToolConfigured, toolID)
+	}
+	cliToolConfiguredMu.Unlock()
+}
+
+func getCliToolConfigured() map[string]bool {
+	cliToolConfiguredMu.RLock()
+	defer cliToolConfiguredMu.RUnlock()
+	out := make(map[string]bool, len(cliToolConfigured))
+	for k, v := range cliToolConfigured {
+		out[k] = v
+	}
+	return out
+}
+
+func backupToolConfig(toolID string) string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	var configPaths []string
+	switch toolID {
+	case "claude":
+		configPaths = []string{filepath.Join(homeDir, ".claude", "settings.json")}
+	case "opencode":
+		configPaths = []string{filepath.Join(homeDir, ".config", "opencode", "opencode.json")}
+	case "cline":
+		configPaths = []string{
+			filepath.Join(homeDir, ".cline", "data", "globalState.json"),
+			filepath.Join(homeDir, ".cline", "data", "secrets.json"),
+		}
+	case "codex":
+		configPaths = []string{
+			filepath.Join(homeDir, ".codex", "config.toml"),
+			filepath.Join(homeDir, ".codex", "auth.json"),
+		}
+	case "kilo", "kilocode":
+		configPaths = []string{filepath.Join(homeDir, ".local", "share", "kilo", "auth.json")}
+	case "deepseek":
+		configPaths = []string{filepath.Join(homeDir, ".deepseek", "config.toml")}
+	case "jcode":
+		configPaths = []string{
+			filepath.Join(homeDir, ".jcode", "config.toml"),
+			filepath.Join(homeDir, ".config", "jcode", "provider-9router.env"),
+		}
+	case "hermes":
+		configPaths = []string{
+			filepath.Join(homeDir, ".hermes", "config.yaml"),
+			filepath.Join(homeDir, ".hermes", ".env"),
+		}
+	case "droid":
+		configPaths = []string{filepath.Join(homeDir, ".factory", "settings.json")}
+	case "openclaw":
+		configPaths = []string{filepath.Join(homeDir, ".openclaw", "openclaw.json")}
+	case "copilot":
+		configPaths = []string{filepath.Join(homeDir, ".config", "Code", "User", "chatLanguageModels.json")}
+	default:
+		return ""
+	}
+
+	var firstBackup string
+	for _, p := range configPaths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(strings.ToLower(string(data)), "superkiro") {
+			continue
+		}
+		backupPath := fmt.Sprintf("%s.superkiro.bak.%d", p, time.Now().Unix())
+		if err := os.WriteFile(backupPath, data, 0644); err != nil {
+			continue
+		}
+		if firstBackup == "" {
+			firstBackup = backupPath
+		}
+	}
+	return firstBackup
+}
+
+type ToolStatus struct {
+	Installed    bool `json:"installed"`
+	HasSuperKiro bool `json:"hasSuperKiro"`
+}
+
+// getToolConfigPaths returns config file paths for a tool (shared across checks)
+func getToolConfigPaths(homeDir, toolID string) []string {
+	switch toolID {
+	case "claude":
+		return []string{filepath.Join(homeDir, ".claude", "settings.json")}
+	case "opencode":
+		return []string{filepath.Join(homeDir, ".config", "opencode", "opencode.json")}
+	case "cline":
+		return []string{
+			filepath.Join(homeDir, ".cline", "data", "globalState.json"),
+			filepath.Join(homeDir, ".cline", "data", "secrets.json"),
+		}
+	case "codex":
+		return []string{
+			filepath.Join(homeDir, ".codex", "config.toml"),
+			filepath.Join(homeDir, ".codex", "auth.json"),
+		}
+	case "kilo", "kilocode":
+		return []string{filepath.Join(homeDir, ".local", "share", "kilo", "auth.json")}
+	case "deepseek":
+		return []string{filepath.Join(homeDir, ".deepseek", "config.toml")}
+	case "jcode":
+		return []string{
+			filepath.Join(homeDir, ".jcode", "config.toml"),
+			filepath.Join(homeDir, ".config", "jcode", "provider-9router.env"),
+		}
+	case "hermes":
+		return []string{
+			filepath.Join(homeDir, ".hermes", "config.yaml"),
+			filepath.Join(homeDir, ".hermes", ".env"),
+		}
+	case "droid":
+		return []string{filepath.Join(homeDir, ".factory", "settings.json")}
+	case "openclaw":
+		return []string{filepath.Join(homeDir, ".openclaw", "openclaw.json")}
+	case "copilot":
+		return []string{filepath.Join(homeDir, ".config", "Code", "User", "chatLanguageModels.json")}
+	default:
+		return nil
+	}
+}
+
+func checkToolInstalled(toolID string) bool {
+	switch toolID {
+	case "copilot":
+		home, _ := os.UserHomeDir()
+		path := filepath.Join(home, ".config", "Code", "User", "chatLanguageModels.json")
+		_, err := os.Stat(path)
+		return err == nil
+	case "cursor":
+		home, _ := os.UserHomeDir()
+		_, err := os.Stat(filepath.Join(home, ".cursor"))
+		return err == nil
+	case "mitm", "antigravity", "kiro":
+		return true
+	default:
+		cmd := exec.Command("which", toolID)
+		return cmd.Run() == nil
+	}
+}
+
+func checkToolHasSuperKiro(toolID string) bool {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+
+	var configExists bool
+
+	switch toolID {
+	case "claude":
+		path := filepath.Join(homeDir, ".claude", "settings.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return false
+		}
+		env, _ := cfg["env"].(map[string]interface{})
+		if env != nil {
+			if url, _ := env["ANTHROPIC_BASE_URL"].(string); url != "" {
+				return true
+			}
+		}
+		return false
+
+	case "opencode":
+		path := filepath.Join(homeDir, ".config", "opencode", "opencode.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return false
+		}
+		if prov, _ := cfg["provider"].(map[string]interface{}); prov != nil {
+			if _, has := prov["superkiro"]; has {
+				return true
+			}
+		}
+		return false
+
+	case "codex":
+		path := filepath.Join(homeDir, ".codex", "config.toml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		// Only the active model_provider matters — the section may exist
+		// but if another provider is selected the tool isn't connected to us
+		return strings.Contains(string(data), "model_provider = \"superkiro\"")
+
+	case "cline":
+		path := filepath.Join(homeDir, ".cline", "data", "globalState.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return false
+		}
+		if url, _ := cfg["openAiBaseUrl"].(string); url != "" {
+			return true
+		}
+		return false
+
+	case "kilo":
+		path := filepath.Join(homeDir, ".local", "share", "kilo", "auth.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return false
+		}
+		if entry, _ := cfg["openai-compatible"].(map[string]interface{}); entry != nil {
+			if url, _ := entry["baseUrl"].(string); url != "" {
+				return true
+			}
+		}
+		return false
+
+	case "deepseek":
+		path := filepath.Join(homeDir, ".deepseek", "config.toml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		content := strings.ToLower(string(data))
+		return strings.Contains(content, "provider = \"openai\"")
+
+	case "jcode":
+		path := filepath.Join(homeDir, ".jcode", "config.toml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		return strings.Contains(string(data), "[providers.9router]") ||
+			strings.Contains(strings.ToLower(string(data)), "superkiro")
+
+	case "hermes":
+		path := filepath.Join(homeDir, ".hermes", "config.yaml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		return strings.Contains(string(data), "base_url:")
+
+	case "droid":
+		path := filepath.Join(homeDir, ".factory", "settings.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return false
+		}
+		if models, _ := cfg["customModels"].([]interface{}); models != nil {
+			for _, m := range models {
+				if mm, _ := m.(map[string]interface{}); mm != nil {
+					if id, _ := mm["id"].(string); strings.HasPrefix(id, "custom:9Router") {
+						return true
+					}
+				}
+			}
+		}
+		return false
+
+	case "openclaw":
+		path := filepath.Join(homeDir, ".openclaw", "openclaw.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		return strings.Contains(string(data), "\"9router\"")
+
+	case "copilot":
+		path := filepath.Join(homeDir, ".config", "Code", "User", "chatLanguageModels.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			break
+		}
+		configExists = true
+		var entries []map[string]interface{}
+		if json.Unmarshal(data, &entries) != nil {
+			return false
+		}
+		for _, e := range entries {
+			if title, _ := e["title"].(string); strings.EqualFold(title, "SuperKiro") {
+				return true
+			}
+		}
+		return false
+
+	case "cursor", "continue", "roo", "amp", "qwen", "cowork":
+		break
+
+	case "mitm", "antigravity", "kiro":
+		break
+	}
+
+	if !configExists {
+		cliToolConfiguredMu.RLock()
+		_, applied := cliToolConfigured[toolID]
+		cliToolConfiguredMu.RUnlock()
+		return applied
+	}
+	return false
+}
+
+func getCliToolsStatus() map[string]ToolStatus {
+	ids := []string{
+		"claude", "opencode", "cline", "codex", "kilo",
+		"continue", "roo", "deepseek", "jcode", "hermes",
+		"droid", "openclaw", "cursor", "amp", "qwen",
+		"cowork", "mitm", "antigravity", "copilot", "kiro",
+	}
+	out := make(map[string]ToolStatus, len(ids))
+	for _, id := range ids {
+		out[id] = ToolStatus{
+			Installed:    checkToolInstalled(id),
+			HasSuperKiro: checkToolHasSuperKiro(id),
+		}
+	}
+	return out
+}
+
+type cliBackupWriter struct {
+	http.ResponseWriter
+	backupFile  string
+	wroteHeader bool
+}
+
+func (w *cliBackupWriter) WriteHeader(statusCode int) {
+	if !w.wroteHeader && statusCode == http.StatusOK && w.backupFile != "" {
+		w.Header().Set("X-Cli-Backup", w.backupFile)
+	}
+	w.wroteHeader = true
+	w.ResponseWriter.WriteHeader(statusCode)
+}
 
 // Handler is the HTTP handler
 type Handler struct {
@@ -2224,6 +2632,9 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 		h.apiGetCliToolApiKey(w, r, keyID)
 
 	// Model test endpoint
+	case path == "/cli-tools/status" && r.Method == "GET":
+		json.NewEncoder(w).Encode(getCliToolsStatus())
+
 	case path == "/cli-tools/test-model" && r.Method == "POST":
 		h.apiTestModel(w, r)
 
@@ -2241,12 +2652,21 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 	case path == "/cli-tools/copilot-settings" && (r.Method == "GET" || r.Method == "POST" || r.Method == "DELETE"):
 		h.apiCopilotSettings(w, r)
 
+	case strings.HasPrefix(path, "/cli-tools/") && r.Method == "GET":
+		toolID := strings.TrimPrefix(path, "/cli-tools/")
+		h.apiGetCliToolSettings(w, r, toolID)
 	case strings.HasPrefix(path, "/cli-tools/") && r.Method == "POST":
 		toolID := strings.TrimPrefix(path, "/cli-tools/")
-		h.apiApplyCliToolSettings(w, r, toolID)
+		backupFile := backupToolConfig(toolID)
+		markCliToolConfigured(toolID, true)
+		bw := &cliBackupWriter{ResponseWriter: w, backupFile: backupFile}
+		h.apiApplyCliToolSettings(bw, r, toolID)
 	case strings.HasPrefix(path, "/cli-tools/") && r.Method == "DELETE":
 		toolID := strings.TrimPrefix(path, "/cli-tools/")
-		h.apiResetCliToolSettings(w, r, toolID)
+		backupFile := backupToolConfig(toolID)
+		markCliToolConfigured(toolID, false)
+		bw := &cliBackupWriter{ResponseWriter: w, backupFile: backupFile}
+		h.apiResetCliToolSettings(bw, r, toolID)
 
 	default:
 		w.WriteHeader(404)
@@ -2700,6 +3120,16 @@ requires_api_key = true
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 
+	setCliToolSettings(toolID, &CliToolSettings{
+		BaseURL:       req.BaseURL,
+		APIKey:        req.APIKey,
+		Model:         req.Model,
+		Models:        req.Models,
+		ActiveModel:   req.ActiveModel,
+		SubagentModel: req.SubagentModel,
+		Env:           req.Env,
+		AgentModels:   req.AgentModels,
+	})
 	default:
 		http.Error(w, `{"error":"unknown tool"}`, 404)
 	}
@@ -2773,7 +3203,19 @@ func (h *Handler) apiResetCliToolSettings(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"error":"unknown tool"}`, 404)
 		return
 	}
+	delCliToolSettings(toolID)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (h *Handler) apiGetCliToolSettings(w http.ResponseWriter, r *http.Request, toolID string) {
+	s := getCliToolSettings(toolID)
+	if s == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": "no settings found"})
+		return
+	}
+	json.NewEncoder(w).Encode(s)
 }
 
 func (h *Handler) apiGetCliToolApiKey(w http.ResponseWriter, r *http.Request, keyID string) {
@@ -3096,6 +3538,7 @@ func (h *Handler) apiCopilotSettings(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(cfg)
 
 	case "POST":
+		backupFile := backupToolConfig("copilot")
 		var req struct {
 			BaseURL string   `json:"baseUrl"`
 			APIKey  string   `json:"apiKey"`
@@ -3104,6 +3547,9 @@ func (h *Handler) apiCopilotSettings(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, `{"error":"invalid request"}`, 400)
 			return
+		}
+		if backupFile != "" {
+			w.Header().Set("X-Cli-Backup", backupFile)
 		}
 		os.MkdirAll(copilotDir, 0755)
 
@@ -3141,9 +3587,20 @@ func (h *Handler) apiCopilotSettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"failed to write settings"}`, 500)
 			return
 		}
+		markCliToolConfigured("copilot", true)
+		setCliToolSettings("copilot", &CliToolSettings{
+			BaseURL: req.BaseURL,
+			APIKey:  req.APIKey,
+			Models:  req.Models,
+		})
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 
 	case "DELETE":
+		backupFile := backupToolConfig("copilot")
+		if backupFile != "" {
+			w.Header().Set("X-Cli-Backup", backupFile)
+		}
+		markCliToolConfigured("copilot", false)
 		var existing []map[string]interface{}
 		if data, err := os.ReadFile(modelsPath); err == nil {
 			json.Unmarshal(data, &existing)
@@ -3158,6 +3615,7 @@ func (h *Handler) apiCopilotSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		data, _ := json.MarshalIndent(kept, "", "  ")
 		os.WriteFile(modelsPath, data, 0644)
+		delCliToolSettings("copilot")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}
 }

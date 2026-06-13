@@ -2487,6 +2487,14 @@ img.brand-icon {
   background: rgba(234,179,8,0.12);
   color: #ca8a04;
 }
+.cli-tool-status-notinstalled {
+  background: rgba(107,114,128,0.12);
+  color: #6b7280;
+}
+.cli-tool-status-unknown {
+  background: rgba(107,114,128,0.08);
+  color: #9ca3af;
+}
 
 /* CLI tool detail view */
 .cli-tool-detail {

@@ -581,7 +581,15 @@
     opts = opts || {};
     opts.headers = Object.assign({ 'X-Admin-Password': password }, opts.headers || {});
     if (opts.body && !opts.headers['Content-Type']) opts.headers['Content-Type'] = 'application/json';
-    return fetch('/admin/api' + path, opts);
+    return fetch('/admin/api' + path, opts).then(function(res) {
+      var backupFile = res.headers.get('X-Cli-Backup');
+      if (backupFile) {
+        setTimeout(function() {
+          toast(t('cliTools.backupCreated') + '\n' + backupFile, 'info', { duration: 6000 });
+        }, 100);
+      }
+      return res;
+    });
   }
 
   // Login
@@ -2936,7 +2944,7 @@ function renderModelItem(modelId) {
     qsa('.tab-content').forEach(c => c.classList.add('hidden'));
     $('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');
     if (tab === 'combos') { loadCombos(); }
-    if (tab === 'api') { renderCliTools(); if (apiKeysCache.length === 0) loadApiKeys(); }
+    if (tab === 'api') { renderCliTools(); if (apiKeysCache.length === 0) loadApiKeys(); loadCliToolStatus(); }
   }
 
   // CLI Tools
@@ -4403,13 +4411,43 @@ function renderModelItem(modelId) {
     { id: 'kiro', nameKey: 'cliTools.toolKiro', descKey: 'cliTools.descKiro', icon: 'kiro.png', render: renderKiroConfig }
   ];
 
+  var cliToolStatuses = {};
+
+  function getCliToolStatus(toolId) {
+    var s = cliToolStatuses[toolId];
+    if (!s) return 'unknown';
+    if (!s.installed) return 'not_installed';
+    if (!s.hasSuperKiro) return 'not_configured';
+    return 'connected';
+  }
+
+  async function loadCliToolStatus() {
+    CLI_TOOL_META.forEach(function(m) { delete cliToolStatuses[m.id]; });
+    var grid = $('cliToolsGrid');
+    if (grid) renderCliToolGrid(grid);
+    try {
+      var res = await api('/cli-tools/status');
+      var data = await res.json();
+      for (var k in data) {
+        if (data.hasOwnProperty(k)) {
+          cliToolStatuses[k] = { installed: !!data[k].installed, hasSuperKiro: !!data[k].hasSuperKiro };
+        }
+      }
+    } catch (e) {}
+    if (grid) renderCliToolGrid(grid);
+  }
+
   function updateCliBadge(toolId, connected) {
+    var existing = cliToolStatuses[toolId] || { installed: true };
+    existing.hasSuperKiro = connected;
+    cliToolStatuses[toolId] = existing;
     var card = document.querySelector('.cli-tool-card[data-cli-tool="' + toolId + '"]');
     if (!card) return;
     var badge = card.querySelector('.cli-tool-status');
     if (badge) {
-      badge.className = 'cli-tool-status ' + (connected ? 'cli-tool-status-connected' : 'cli-tool-status-notconfigured');
-      badge.textContent = t(connected ? 'cliTools.connected' : 'cliTools.notConfigured');
+      var status = getCliToolStatus(toolId);
+      badge.className = 'cli-tool-status ' + (status === 'connected' ? 'cli-tool-status-connected' : 'cli-tool-status-notconfigured');
+      badge.textContent = t(status === 'connected' ? 'cliTools.connected' : 'cliTools.notConfigured');
     }
   }
 
@@ -4440,8 +4478,14 @@ function renderModelItem(modelId) {
       var card = document.createElement('div');
       card.className = 'cli-tool-card';
       card.dataset.cliTool = meta.id;
-      var statusClass = 'cli-tool-status-notconfigured';
-      var statusLabel = t('cliTools.notConfigured');
+      var status = getCliToolStatus(meta.id);
+      var statusClass, statusLabel;
+      switch (status) {
+        case 'connected': statusClass = 'cli-tool-status-connected'; statusLabel = t('cliTools.connected'); break;
+        case 'not_configured': statusClass = 'cli-tool-status-notconfigured'; statusLabel = t('cliTools.notConfigured'); break;
+        case 'not_installed': statusClass = 'cli-tool-status-notinstalled'; statusLabel = t('cliTools.notInstalled'); break;
+        default: statusClass = 'cli-tool-status-unknown'; statusLabel = t('cliTools.unknown');
+      }
       card.innerHTML =
         '<span class="cli-tool-icon">' + renderToolIcon(meta.icon) + '</span>' +
         '<div class="cli-tool-info">' +
@@ -4450,6 +4494,10 @@ function renderModelItem(modelId) {
         '</div>' +
         '<span class="cli-tool-status ' + statusClass + '">' + statusLabel + '</span>';
       card.addEventListener('click', function () {
+        if (getCliToolStatus(meta.id) === 'not_installed') {
+          toast(t('cliTools.notInstalled') + ': ' + t(meta.nameKey), 'info');
+          return;
+        }
         cliToolDetailId = meta.id;
         renderCliTools();
       });
@@ -4500,6 +4548,143 @@ function renderModelItem(modelId) {
 
     populateAkSelect(toolId);
     if (apiKeysCache.length === 0) { await loadApiKeys(); populateAkSelect(toolId); }
+    loadCliToolSettings(toolId);
+  }
+
+  function populateEndpointField(prefix, baseUrl) {
+    if (!baseUrl) return;
+    var ep = $(prefix + '_ep');
+    if (!ep) return;
+    var localUrl = ep.options[0].textContent;
+    var norm = function(u) { return u.replace(/\/+$/, '').replace(/\/v1$/, ''); };
+    if (norm(baseUrl) === norm(localUrl)) {
+      ep.value = 'local';
+    } else {
+      ep.value = 'custom';
+      var c = $(prefix + '_epCustom');
+      if (c) { c.value = baseUrl; c.classList.remove('hidden'); }
+    }
+  }
+
+  function populateApiKeyField(prefix, apiKey) {
+    if (!apiKey) return;
+    var ak = $(prefix + '_ak');
+    if (!ak) return;
+    ak.value = 'custom';
+    var c = $(prefix + '_akCustom');
+    if (c) { c.value = apiKey; c.classList.remove('hidden'); }
+  }
+
+  async function loadCliToolSettings(toolId) {
+    if (getCliToolStatus(toolId) !== 'connected') return;
+    var res = await api('/cli-tools/' + toolId);
+    if (!res.ok) return;
+    var s = await res.json();
+    if (!s || s.error) return;
+
+    var prefix = toolId;
+    var needsReRender = false;
+
+    switch (toolId) {
+      case 'claude':
+        if (s.env) {
+          if (!window.claudeSlotState) window.claudeSlotState = {};
+          ['opus','sonnet','haiku'].forEach(function(k) {
+            var envKey = 'ANTHROPIC_DEFAULT_' + k.toUpperCase() + '_MODEL';
+            if (s.env[envKey]) {
+              window.claudeSlotState[k] = s.env[envKey];
+              var inp = document.querySelector('.claude-slot-input[data-slot="' + k + '"]');
+              if (inp) inp.value = s.env[envKey];
+            }
+          });
+        }
+        break;
+      case 'opencode':
+        if (s.models || s.activeModel || s.subagentModel) {
+          var st = window.__openCodeState || { models: [], activeModel: '', subagentModel: '' };
+          if (s.models) st.models = s.models;
+          if (s.activeModel) st.activeModel = s.activeModel;
+          if (s.subagentModel) st.subagentModel = s.subagentModel;
+          window.__openCodeState = st;
+          needsReRender = true;
+        }
+        break;
+      case 'copilot':
+        if (s.models) {
+          var cps = window.__copilotState || { models: [] };
+          cps.models = s.models;
+          window.__copilotState = cps;
+          needsReRender = true;
+        }
+        break;
+      case 'codex':
+        if (s.model) {
+          var cs = window.__codexState || {};
+          cs.model = s.model;
+          if (s.subagentModel) cs.subagentModel = s.subagentModel;
+          window.__codexState = cs;
+          needsReRender = true;
+        }
+        break;
+      case 'cline':
+        if (s.model) {
+          if (!window.__clineState) window.__clineState = { model: '' };
+          window.__clineState.model = s.model;
+          var inp = document.getElementById('clineModel');
+          if (inp) inp.value = s.model;
+        }
+        break;
+      case 'deepseek':
+        if (s.model) {
+          var inp = document.getElementById('deepseekModel');
+          if (inp) inp.value = s.model;
+        }
+        break;
+      case 'kilocode':
+        if (s.model) {
+          var inp = document.getElementById('kiloModel');
+          if (inp) inp.value = s.model;
+        }
+        break;
+      case 'hermes':
+        if (s.model) {
+          var inp = document.getElementById('hermesModel');
+          if (inp) inp.value = s.model;
+        }
+        break;
+      case 'jcode':
+        if (s.models) {
+          if (!window.__jcodeState) window.__jcodeState = { models: [] };
+          window.__jcodeState.models = s.models;
+          needsReRender = true;
+        }
+        break;
+      case 'droid':
+        if (s.models || s.activeModel) {
+          if (!window.__droidState) window.__droidState = { models: [], activeModel: '', subagentModel: '' };
+          if (s.models) window.__droidState.models = s.models;
+          if (s.activeModel) window.__droidState.activeModel = s.activeModel;
+          needsReRender = true;
+        }
+        break;
+      case 'openclaw':
+        if (s.model || s.agentModels) {
+          if (!window.__openclawState) window.__openclawState = { model: '', agentModels: {} };
+          if (s.model) window.__openclawState.model = s.model;
+          if (s.agentModels) window.__openclawState.agentModels = s.agentModels;
+          needsReRender = true;
+        }
+        break;
+    }
+
+    populateEndpointField(prefix, s.baseUrl);
+    populateApiKeyField(prefix, s.apiKey);
+
+    if (needsReRender) {
+      reRenderDetailBody();
+      populateEndpointField(prefix, s.baseUrl);
+      populateApiKeyField(prefix, s.apiKey);
+    }
   }
 
   window.backToCliTools = function () {
