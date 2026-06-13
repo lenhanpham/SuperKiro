@@ -4640,7 +4640,7 @@ function renderModelItem(modelId) {
           if (inp) inp.value = s.model;
         }
         break;
-      case 'kilocode':
+      case 'kilo':
         if (s.model) {
           var inp = document.getElementById('kiloModel');
           if (inp) inp.value = s.model;

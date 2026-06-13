@@ -253,10 +253,9 @@ func checkToolHasSuperKiro(toolID string) bool {
 		if json.Unmarshal(data, &cfg) != nil {
 			return false
 		}
-		if prov, _ := cfg["provider"].(map[string]interface{}); prov != nil {
-			if _, has := prov["superkiro"]; has {
-				return true
-			}
+		model, _ := cfg["model"].(string)
+		if strings.HasPrefix(model, "superkiro/") {
+			return true
 		}
 		return false
 
@@ -3207,8 +3206,493 @@ func (h *Handler) apiResetCliToolSettings(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+type tomlSec struct {
+	name string
+	kv   map[string]string
+}
+
+func parseTOML(data []byte) []tomlSec {
+	var secs []tomlSec
+	var cur *tomlSec
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line[0] == '#' {
+			continue
+		}
+		if line[0] == '[' && line[len(line)-1] == ']' {
+			if cur != nil {
+				secs = append(secs, *cur)
+			}
+			cur = &tomlSec{name: line[1 : len(line)-1], kv: make(map[string]string)}
+			continue
+		}
+		if cur != nil {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.Trim(strings.TrimSpace(parts[1]), "\"")
+				cur.kv[k] = v
+			}
+		}
+	}
+	if cur != nil {
+		secs = append(secs, *cur)
+	}
+	return secs
+}
+
+func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	switch toolID {
+	case "codex":
+		path := filepath.Join(homeDir, ".codex", "config.toml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		secs := parseTOML(data)
+		// Find active provider
+		var activeProvider string
+		for _, s := range secs {
+			if s.name == "" {
+				if v, ok := s.kv["model_provider"]; ok {
+					activeProvider = v
+				}
+			}
+		}
+		if activeProvider == "" {
+			return nil
+		}
+		// Look up the active provider section
+		provSection := "model_providers." + activeProvider
+		var baseUrl string
+		for _, s := range secs {
+			if s.name == provSection {
+				if v, ok := s.kv["base_url"]; ok {
+					baseUrl = v
+				}
+				break
+			}
+		}
+		// Read model from root
+		model := ""
+		for _, s := range secs {
+			if s.name == "" {
+				if v, ok := s.kv["model"]; ok {
+					model = v
+				}
+				break
+			}
+		}
+		// Read subagent model
+		subagentModel := ""
+		for _, s := range secs {
+			if s.name == "agents.subagent" {
+				if v, ok := s.kv["model"]; ok {
+					subagentModel = v
+				}
+				break
+			}
+		}
+		// Read API key
+		apiKey := ""
+		if authData, err := os.ReadFile(filepath.Join(homeDir, ".codex", "auth.json")); err == nil {
+			var auth map[string]string
+			if json.Unmarshal(authData, &auth) == nil {
+				apiKey = auth["OPENAI_API_KEY"]
+			}
+		}
+		return &CliToolSettings{
+			BaseURL:       baseUrl,
+			APIKey:        apiKey,
+			Model:         model,
+			ActiveModel:   model,
+			SubagentModel: subagentModel,
+		}
+
+	case "opencode":
+		path := filepath.Join(homeDir, ".config", "opencode", "opencode.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return nil
+		}
+		activeModel, _ := cfg["model"].(string)
+		// Determine active provider from model prefix
+		providers, _ := cfg["provider"].(map[string]interface{})
+		if providers == nil {
+			return nil
+		}
+		var activeProv string
+		if strings.HasPrefix(activeModel, "superkiro/") {
+			activeProv = "superkiro"
+		} else {
+			// No active SuperKiro provider
+			return nil
+		}
+		p, _ := providers[activeProv].(map[string]interface{})
+		if p == nil {
+			return nil
+		}
+		opts, _ := p["options"].(map[string]interface{})
+		if opts == nil {
+			return nil
+		}
+		baseUrl, _ := opts["baseURL"].(string)
+		apiKey, _ := opts["apiKey"].(string)
+		// Extract models list
+		modelsMap, _ := p["models"].(map[string]interface{})
+		var models []string
+		for name := range modelsMap {
+			models = append(models, name)
+		}
+		// Subagent model
+		subagentModel := ""
+		if agent, _ := cfg["agent"].(map[string]interface{}); agent != nil {
+			if explorer, _ := agent["explorer"].(map[string]interface{}); explorer != nil {
+				if m, _ := explorer["model"].(string); m != "" {
+					subagentModel = strings.TrimPrefix(m, "superkiro/")
+				}
+			}
+		}
+		return &CliToolSettings{
+			BaseURL:       baseUrl,
+			APIKey:        apiKey,
+			Models:        models,
+			ActiveModel:   strings.TrimPrefix(activeModel, "superkiro/"),
+			SubagentModel: subagentModel,
+		}
+
+	case "claude":
+		path := filepath.Join(homeDir, ".claude", "settings.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return nil
+		}
+		env, _ := cfg["env"].(map[string]interface{})
+		if env == nil {
+			return nil
+		}
+		baseUrl, _ := env["ANTHROPIC_BASE_URL"].(string)
+		apiKey, _ := env["ANTHROPIC_AUTH_TOKEN"].(string)
+		envMap := make(map[string]string)
+		for k, v := range env {
+			if s, ok := v.(string); ok {
+				envMap[k] = s
+			}
+		}
+		return &CliToolSettings{
+			BaseURL: baseUrl,
+			APIKey:  apiKey,
+			Env:     envMap,
+		}
+
+	case "cline":
+		path := filepath.Join(homeDir, ".cline", "data", "globalState.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return nil
+		}
+		model, _ := cfg["openAiModelId"].(string)
+		baseUrl, _ := cfg["openAiBaseUrl"].(string)
+		apiKey := ""
+		if secretsData, err := os.ReadFile(filepath.Join(homeDir, ".cline", "data", "secrets.json")); err == nil {
+			var secrets map[string]string
+			if json.Unmarshal(secretsData, &secrets) == nil {
+				apiKey = secrets["openAiApiKey"]
+			}
+		}
+		return &CliToolSettings{
+			BaseURL: baseUrl,
+			APIKey:  apiKey,
+			Model:   model,
+		}
+
+	case "deepseek":
+		path := filepath.Join(homeDir, ".deepseek", "config.toml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		secs := parseTOML(data)
+		var baseUrl, apiKey, model string
+		for _, s := range secs {
+			if s.name == "providers.openai" || s.name == "providers.openai-compatible" {
+				if v, ok := s.kv["base_url"]; ok {
+					baseUrl = v
+				}
+				if v, ok := s.kv["api_key"]; ok {
+					apiKey = v
+				}
+				if v, ok := s.kv["model"]; ok {
+					model = v
+				}
+			}
+		}
+		if baseUrl == "" {
+			return nil
+		}
+		return &CliToolSettings{
+			BaseURL: baseUrl,
+			APIKey:  apiKey,
+			Model:   model,
+		}
+
+	case "jcode":
+		path := filepath.Join(homeDir, ".jcode", "config.toml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		secs := parseTOML(data)
+		var baseUrl, apiKey, defaultModel string
+		var models []string
+		for _, s := range secs {
+			if s.name == "providers.9router" {
+				if v, ok := s.kv["base_url"]; ok {
+					baseUrl = v
+				}
+				if v, ok := s.kv["default_model"]; ok {
+					defaultModel = v
+				}
+			}
+			if strings.HasPrefix(s.name, "providers.9router.models") {
+				if v, ok := s.kv["id"]; ok {
+					models = append(models, v)
+				}
+			}
+		}
+		// Read API key from env file
+		envData, err := os.ReadFile(filepath.Join(homeDir, ".config", "jcode", "provider-9router.env"))
+		if err == nil {
+			for _, line := range strings.Split(string(envData), "\n") {
+				if strings.HasPrefix(line, "JCODE_9ROUTER_API_KEY=") {
+					apiKey = strings.Trim(strings.TrimPrefix(line, "JCODE_9ROUTER_API_KEY="), "\"")
+				}
+			}
+		}
+		if baseUrl == "" {
+			return nil
+		}
+		return &CliToolSettings{
+			BaseURL:  baseUrl,
+			APIKey:   apiKey,
+			Model:    defaultModel,
+			Models:   models,
+		}
+
+	case "kilo":
+		path := filepath.Join(homeDir, ".local", "share", "kilo", "auth.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return nil
+		}
+		entry, _ := cfg["openai-compatible"].(map[string]interface{})
+		if entry == nil {
+			return nil
+		}
+		baseUrl, _ := entry["baseUrl"].(string)
+		apiKey, _ := entry["apiKey"].(string)
+		model, _ := entry["model"].(string)
+		return &CliToolSettings{
+			BaseURL: baseUrl,
+			APIKey:  apiKey,
+			Model:   model,
+		}
+
+	case "hermes":
+		yamlPath := filepath.Join(homeDir, ".hermes", "config.yaml")
+		data, err := os.ReadFile(yamlPath)
+		if err != nil {
+			return nil
+		}
+		yaml := string(data)
+		var baseUrl, model string
+		for _, line := range strings.Split(yaml, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "base_url:") {
+				baseUrl = strings.TrimSpace(strings.TrimPrefix(line, "base_url:"))
+				baseUrl = strings.Trim(baseUrl, "\"")
+			}
+			if strings.HasPrefix(line, "default:") {
+				model = strings.TrimSpace(strings.TrimPrefix(line, "default:"))
+				model = strings.Trim(model, "\"")
+			}
+		}
+		apiKey := ""
+		if envData, err := os.ReadFile(filepath.Join(homeDir, ".hermes", ".env")); err == nil {
+			for _, line := range strings.Split(string(envData), "\n") {
+				if strings.HasPrefix(line, "OPENAI_API_KEY=") {
+					apiKey = strings.Trim(strings.TrimPrefix(line, "OPENAI_API_KEY="), "\"")
+					break
+				}
+			}
+		}
+		return &CliToolSettings{
+			BaseURL: baseUrl,
+			APIKey:  apiKey,
+			Model:   model,
+		}
+
+	case "droid":
+		path := filepath.Join(homeDir, ".factory", "settings.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return nil
+		}
+		models, _ := cfg["customModels"].([]interface{})
+		if models == nil {
+			return nil
+		}
+		var ourModels []string
+		var activeModel string
+		var baseUrl, apiKey string
+		for _, m := range models {
+			mm, _ := m.(map[string]interface{})
+			if mm == nil {
+				continue
+			}
+			id, _ := mm["id"].(string)
+			if !strings.HasPrefix(id, "custom:9Router") {
+				continue
+			}
+			if mName, _ := mm["model"].(string); mName != "" {
+				ourModels = append(ourModels, mName)
+			}
+			idx, _ := mm["index"].(float64)
+			if activeModel == "" || (idx == 0) {
+				if mName, _ := mm["model"].(string); mName != "" {
+					activeModel = mName
+				}
+			}
+			if b, _ := mm["baseUrl"].(string); b != "" {
+				baseUrl = b
+			}
+			if k, _ := mm["apiKey"].(string); k != "" {
+				apiKey = k
+			}
+		}
+		if len(ourModels) == 0 {
+			return nil
+		}
+		return &CliToolSettings{
+			BaseURL:     baseUrl,
+			APIKey:      apiKey,
+			Models:      ourModels,
+			ActiveModel: activeModel,
+		}
+
+	case "openclaw":
+		path := filepath.Join(homeDir, ".openclaw", "openclaw.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) != nil {
+			return nil
+		}
+		modelsSec, _ := cfg["models"].(map[string]interface{})
+		if modelsSec == nil {
+			return nil
+		}
+		providers, _ := modelsSec["providers"].(map[string]interface{})
+		if providers == nil {
+			return nil
+		}
+		p, _ := providers["9router"].(map[string]interface{})
+		if p == nil {
+			return nil
+		}
+		baseUrl, _ := p["baseUrl"].(string)
+		apiKey, _ := p["apiKey"].(string)
+		model := ""
+		if ms, _ := p["models"].([]interface{}); len(ms) > 0 {
+			if m, _ := ms[0].(map[string]interface{}); m != nil {
+				model, _ = m["id"].(string)
+			}
+		}
+		// Read agent models
+		agentModels := map[string]string{}
+		if agents, _ := cfg["agents"].(map[string]interface{}); agents != nil {
+			if list, _ := agents["list"].([]interface{}); list != nil {
+				for _, a := range list {
+					if am, _ := a.(map[string]interface{}); am != nil {
+						if id, _ := am["id"].(string); id != "" {
+							if m, _ := am["model"].(string); m != "" {
+								agentModels[id] = strings.TrimPrefix(m, "9router/")
+							}
+						}
+					}
+				}
+			}
+		}
+		return &CliToolSettings{
+			BaseURL:     baseUrl,
+			APIKey:      apiKey,
+			Model:       model,
+			AgentModels: agentModels,
+		}
+
+	case "copilot":
+		path := filepath.Join(homeDir, ".config", "Code", "User", "chatLanguageModels.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var entries []map[string]interface{}
+		if json.Unmarshal(data, &entries) != nil {
+			return nil
+		}
+		for _, e := range entries {
+			title, _ := e["title"].(string)
+			if !strings.EqualFold(title, "SuperKiro") {
+				continue
+			}
+			baseUrl, _ := e["baseUrl"].(string)
+			apiKey, _ := e["apiKey"].(string)
+			model, _ := e["model"].(string)
+			models := []string{model}
+			return &CliToolSettings{
+				BaseURL: baseUrl,
+				APIKey:  apiKey,
+				Models:  models,
+			}
+		}
+		return nil
+	}
+
+	return nil
+}
+
 func (h *Handler) apiGetCliToolSettings(w http.ResponseWriter, r *http.Request, toolID string) {
 	s := getCliToolSettings(toolID)
+	if s == nil {
+		s = readCliToolSettingsFromFile(toolID)
+	}
 	if s == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(404)
