@@ -29,14 +29,15 @@ var (
 )
 
 type CliToolSettings struct {
-	BaseURL       string            `json:"baseUrl"`
-	APIKey        string            `json:"apiKey"`
-	Model         string            `json:"model"`
-	Models        []string          `json:"models"`
-	ActiveModel   string            `json:"activeModel"`
-	SubagentModel string            `json:"subagentModel"`
-	Env           map[string]string `json:"env"`
-	AgentModels   map[string]string `json:"agentModels"`
+	BaseURL       string            `json:"baseUrl,omitempty"`
+	APIKey        string            `json:"apiKey,omitempty"`
+	Model         string            `json:"model,omitempty"`
+	Models        []string          `json:"models,omitempty"`
+	ActiveModel   string            `json:"activeModel,omitempty"`
+	SubagentModel string            `json:"subagentModel,omitempty"`
+	Env           map[string]string `json:"env,omitempty"`
+	AgentModels   map[string]string `json:"agentModels,omitempty"`
+	Config        string            `json:"config,omitempty"`
 }
 
 var (
@@ -3226,13 +3227,14 @@ func parseTOML(data []byte) []tomlSec {
 			cur = &tomlSec{name: line[1 : len(line)-1], kv: make(map[string]string)}
 			continue
 		}
-		if cur != nil {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				k := strings.TrimSpace(parts[0])
-				v := strings.Trim(strings.TrimSpace(parts[1]), "\"")
-				cur.kv[k] = v
-			}
+		if cur == nil {
+			cur = &tomlSec{name: "", kv: make(map[string]string)}
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			k := strings.TrimSpace(parts[0])
+			v := strings.Trim(strings.TrimSpace(parts[1]), "\"")
+			cur.kv[k] = v
 		}
 	}
 	if cur != nil {
@@ -3254,42 +3256,32 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		secs := parseTOML(data)
-		// Find active provider
-		var activeProvider string
-		for _, s := range secs {
-			if s.name == "" {
-				if v, ok := s.kv["model_provider"]; ok {
-					activeProvider = v
-				}
-			}
-		}
-		if activeProvider == "" {
-			return nil
-		}
-		// Look up the active provider section
-		provSection := "model_providers." + activeProvider
-		var baseUrl string
-		for _, s := range secs {
-			if s.name == provSection {
-				if v, ok := s.kv["base_url"]; ok {
-					baseUrl = v
-				}
-				break
-			}
-		}
-		// Read model from root
-		model := ""
+		var model, modelProvider, baseUrl, subagentModel string
 		for _, s := range secs {
 			if s.name == "" {
 				if v, ok := s.kv["model"]; ok {
 					model = v
 				}
-				break
+				if v, ok := s.kv["model_provider"]; ok {
+					modelProvider = v
+				}
+			}
+		}
+		// Read base_url from the active provider section
+		if modelProvider != "" {
+			provSection := "model_providers." + modelProvider
+			for _, s := range secs {
+				if s.name == provSection {
+					if v, ok := s.kv["base_url"]; ok {
+						baseUrl = v
+					}
+					break
+				}
 			}
 		}
 		// Read subagent model
-		subagentModel := ""
 		for _, s := range secs {
 			if s.name == "agents.subagent" {
 				if v, ok := s.kv["model"]; ok {
@@ -3298,20 +3290,12 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 				break
 			}
 		}
-		// Read API key
-		apiKey := ""
-		if authData, err := os.ReadFile(filepath.Join(homeDir, ".codex", "auth.json")); err == nil {
-			var auth map[string]string
-			if json.Unmarshal(authData, &auth) == nil {
-				apiKey = auth["OPENAI_API_KEY"]
-			}
-		}
 		return &CliToolSettings{
 			BaseURL:       baseUrl,
-			APIKey:        apiKey,
 			Model:         model,
 			ActiveModel:   model,
 			SubagentModel: subagentModel,
+			Config:        raw,
 		}
 
 	case "opencode":
@@ -3320,41 +3304,29 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		var cfg map[string]interface{}
 		if json.Unmarshal(data, &cfg) != nil {
 			return nil
 		}
 		activeModel, _ := cfg["model"].(string)
-		// Determine active provider from model prefix
 		providers, _ := cfg["provider"].(map[string]interface{})
-		if providers == nil {
-			return nil
-		}
-		var activeProv string
-		if strings.HasPrefix(activeModel, "superkiro/") {
-			activeProv = "superkiro"
-		} else {
-			// No active SuperKiro provider
-			return nil
-		}
-		p, _ := providers[activeProv].(map[string]interface{})
-		if p == nil {
-			return nil
-		}
-		opts, _ := p["options"].(map[string]interface{})
-		if opts == nil {
-			return nil
-		}
-		baseUrl, _ := opts["baseURL"].(string)
-		apiKey, _ := opts["apiKey"].(string)
-		// Extract models list
-		modelsMap, _ := p["models"].(map[string]interface{})
+		var baseUrl, apiKey string
 		var models []string
-		for name := range modelsMap {
-			models = append(models, name)
+		var subagentModel string
+		if providers != nil {
+			if p, _ := providers["superkiro"].(map[string]interface{}); p != nil {
+				if opts, _ := p["options"].(map[string]interface{}); opts != nil {
+					baseUrl, _ = opts["baseURL"].(string)
+					apiKey, _ = opts["apiKey"].(string)
+				}
+				if modelsMap, _ := p["models"].(map[string]interface{}); modelsMap != nil {
+					for name := range modelsMap {
+						models = append(models, name)
+					}
+				}
+			}
 		}
-		// Subagent model
-		subagentModel := ""
 		if agent, _ := cfg["agent"].(map[string]interface{}); agent != nil {
 			if explorer, _ := agent["explorer"].(map[string]interface{}); explorer != nil {
 				if m, _ := explorer["model"].(string); m != "" {
@@ -3368,6 +3340,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 			Models:        models,
 			ActiveModel:   strings.TrimPrefix(activeModel, "superkiro/"),
 			SubagentModel: subagentModel,
+			Config:        raw,
 		}
 
 	case "claude":
@@ -3376,6 +3349,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		var cfg map[string]interface{}
 		if json.Unmarshal(data, &cfg) != nil {
 			return nil
@@ -3396,6 +3370,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 			BaseURL: baseUrl,
 			APIKey:  apiKey,
 			Env:     envMap,
+			Config:  raw,
 		}
 
 	case "cline":
@@ -3404,6 +3379,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		var cfg map[string]interface{}
 		if json.Unmarshal(data, &cfg) != nil {
 			return nil
@@ -3421,6 +3397,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 			BaseURL: baseUrl,
 			APIKey:  apiKey,
 			Model:   model,
+			Config:  raw,
 		}
 
 	case "deepseek":
@@ -3429,6 +3406,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		secs := parseTOML(data)
 		var baseUrl, apiKey, model string
 		for _, s := range secs {
@@ -3444,13 +3422,11 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 				}
 			}
 		}
-		if baseUrl == "" {
-			return nil
-		}
 		return &CliToolSettings{
 			BaseURL: baseUrl,
 			APIKey:  apiKey,
 			Model:   model,
+			Config:  raw,
 		}
 
 	case "jcode":
@@ -3459,6 +3435,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		secs := parseTOML(data)
 		var baseUrl, apiKey, defaultModel string
 		var models []string
@@ -3477,7 +3454,6 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 				}
 			}
 		}
-		// Read API key from env file
 		envData, err := os.ReadFile(filepath.Join(homeDir, ".config", "jcode", "provider-9router.env"))
 		if err == nil {
 			for _, line := range strings.Split(string(envData), "\n") {
@@ -3486,14 +3462,12 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 				}
 			}
 		}
-		if baseUrl == "" {
-			return nil
-		}
 		return &CliToolSettings{
-			BaseURL:  baseUrl,
-			APIKey:   apiKey,
-			Model:    defaultModel,
-			Models:   models,
+			BaseURL: baseUrl,
+			APIKey:  apiKey,
+			Model:   defaultModel,
+			Models:  models,
+			Config:  raw,
 		}
 
 	case "kilo":
@@ -3502,21 +3476,23 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		var cfg map[string]interface{}
 		if json.Unmarshal(data, &cfg) != nil {
 			return nil
 		}
 		entry, _ := cfg["openai-compatible"].(map[string]interface{})
-		if entry == nil {
-			return nil
+		var baseUrl, apiKey, model string
+		if entry != nil {
+			baseUrl, _ = entry["baseUrl"].(string)
+			apiKey, _ = entry["apiKey"].(string)
+			model, _ = entry["model"].(string)
 		}
-		baseUrl, _ := entry["baseUrl"].(string)
-		apiKey, _ := entry["apiKey"].(string)
-		model, _ := entry["model"].(string)
 		return &CliToolSettings{
 			BaseURL: baseUrl,
 			APIKey:  apiKey,
 			Model:   model,
+			Config:  raw,
 		}
 
 	case "hermes":
@@ -3525,9 +3501,9 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
-		yaml := string(data)
+		raw := string(data)
 		var baseUrl, model string
-		for _, line := range strings.Split(yaml, "\n") {
+		for _, line := range strings.Split(raw, "\n") {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "base_url:") {
 				baseUrl = strings.TrimSpace(strings.TrimPrefix(line, "base_url:"))
@@ -3551,6 +3527,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 			BaseURL: baseUrl,
 			APIKey:  apiKey,
 			Model:   model,
+			Config:  raw,
 		}
 
 	case "droid":
@@ -3559,50 +3536,48 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		var cfg map[string]interface{}
 		if json.Unmarshal(data, &cfg) != nil {
 			return nil
 		}
 		models, _ := cfg["customModels"].([]interface{})
-		if models == nil {
-			return nil
-		}
 		var ourModels []string
 		var activeModel string
 		var baseUrl, apiKey string
-		for _, m := range models {
-			mm, _ := m.(map[string]interface{})
-			if mm == nil {
-				continue
-			}
-			id, _ := mm["id"].(string)
-			if !strings.HasPrefix(id, "custom:9Router") {
-				continue
-			}
-			if mName, _ := mm["model"].(string); mName != "" {
-				ourModels = append(ourModels, mName)
-			}
-			idx, _ := mm["index"].(float64)
-			if activeModel == "" || (idx == 0) {
+		if models != nil {
+			for _, m := range models {
+				mm, _ := m.(map[string]interface{})
+				if mm == nil {
+					continue
+				}
+				id, _ := mm["id"].(string)
+				if !strings.HasPrefix(id, "custom:9Router") {
+					continue
+				}
 				if mName, _ := mm["model"].(string); mName != "" {
-					activeModel = mName
+					ourModels = append(ourModels, mName)
+				}
+				idx, _ := mm["index"].(float64)
+				if activeModel == "" || (idx == 0) {
+					if mName, _ := mm["model"].(string); mName != "" {
+						activeModel = mName
+					}
+				}
+				if b, _ := mm["baseUrl"].(string); b != "" {
+					baseUrl = b
+				}
+				if k, _ := mm["apiKey"].(string); k != "" {
+					apiKey = k
 				}
 			}
-			if b, _ := mm["baseUrl"].(string); b != "" {
-				baseUrl = b
-			}
-			if k, _ := mm["apiKey"].(string); k != "" {
-				apiKey = k
-			}
-		}
-		if len(ourModels) == 0 {
-			return nil
 		}
 		return &CliToolSettings{
 			BaseURL:     baseUrl,
 			APIKey:      apiKey,
 			Models:      ourModels,
 			ActiveModel: activeModel,
+			Config:      raw,
 		}
 
 	case "openclaw":
@@ -3611,32 +3586,28 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		var cfg map[string]interface{}
 		if json.Unmarshal(data, &cfg) != nil {
 			return nil
 		}
 		modelsSec, _ := cfg["models"].(map[string]interface{})
-		if modelsSec == nil {
-			return nil
-		}
-		providers, _ := modelsSec["providers"].(map[string]interface{})
-		if providers == nil {
-			return nil
-		}
-		p, _ := providers["9router"].(map[string]interface{})
-		if p == nil {
-			return nil
-		}
-		baseUrl, _ := p["baseUrl"].(string)
-		apiKey, _ := p["apiKey"].(string)
-		model := ""
-		if ms, _ := p["models"].([]interface{}); len(ms) > 0 {
-			if m, _ := ms[0].(map[string]interface{}); m != nil {
-				model, _ = m["id"].(string)
+		var baseUrl, apiKey, model string
+		var agentModels map[string]string
+		if modelsSec != nil {
+			if providers, _ := modelsSec["providers"].(map[string]interface{}); providers != nil {
+				if p, _ := providers["9router"].(map[string]interface{}); p != nil {
+					baseUrl, _ = p["baseUrl"].(string)
+					apiKey, _ = p["apiKey"].(string)
+					if ms, _ := p["models"].([]interface{}); len(ms) > 0 {
+						if m, _ := ms[0].(map[string]interface{}); m != nil {
+							model, _ = m["id"].(string)
+						}
+					}
+				}
 			}
 		}
-		// Read agent models
-		agentModels := map[string]string{}
+		agentModels = map[string]string{}
 		if agents, _ := cfg["agents"].(map[string]interface{}); agents != nil {
 			if list, _ := agents["list"].([]interface{}); list != nil {
 				for _, a := range list {
@@ -3655,6 +3626,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 			APIKey:      apiKey,
 			Model:       model,
 			AgentModels: agentModels,
+			Config:      raw,
 		}
 
 	case "copilot":
@@ -3663,6 +3635,7 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 		if err != nil {
 			return nil
 		}
+		raw := string(data)
 		var entries []map[string]interface{}
 		if json.Unmarshal(data, &entries) != nil {
 			return nil
@@ -3675,11 +3648,11 @@ func readCliToolSettingsFromFile(toolID string) *CliToolSettings {
 			baseUrl, _ := e["baseUrl"].(string)
 			apiKey, _ := e["apiKey"].(string)
 			model, _ := e["model"].(string)
-			models := []string{model}
 			return &CliToolSettings{
 				BaseURL: baseUrl,
 				APIKey:  apiKey,
-				Models:  models,
+				Models:  []string{model},
+				Config:  raw,
 			}
 		}
 		return nil

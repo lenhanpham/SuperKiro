@@ -4576,7 +4576,6 @@ function renderModelItem(modelId) {
   }
 
   async function loadCliToolSettings(toolId) {
-    if (getCliToolStatus(toolId) !== 'connected') return;
     var res = await api('/cli-tools/' + toolId);
     if (!res.ok) return;
     var s = await res.json();
@@ -4675,6 +4674,34 @@ function renderModelItem(modelId) {
           needsReRender = true;
         }
         break;
+    }
+
+    if (s.config) {
+      if (toolId === 'codex') {
+        var modelMatch = s.config.match(/^model\s*=\s*"([^"]+)"/m);
+        if (modelMatch && !window.__codexState?.model) {
+          if (!window.__codexState) window.__codexState = {};
+          window.__codexState.model = modelMatch[1];
+          needsReRender = true;
+        }
+        var subMatch = s.config.match(/\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m);
+        if (subMatch && !window.__codexState?.subagentModel) {
+          if (!window.__codexState) window.__codexState = {};
+          window.__codexState.subagentModel = subMatch[1];
+          needsReRender = true;
+        }
+      } else if (toolId === 'deepseek') {
+        var urlMatch = s.config.match(/base_url\s*=\s*"([^"]+)"/);
+        if (urlMatch && !s.baseUrl) s.baseUrl = urlMatch[1];
+        var dsModel = s.config.match(/model\s*=\s*"([^"]+)"/m);
+        if (dsModel && !s.model) {
+          var inp = document.getElementById('deepseekModel');
+          if (inp) inp.value = dsModel[1];
+        }
+      } else if (toolId === 'jcode') {
+        var urlMatch = s.config.match(/base_url\s*=\s*"([^"]+)"/);
+        if (urlMatch && !s.baseUrl) s.baseUrl = urlMatch[1];
+      }
     }
 
     populateEndpointField(prefix, s.baseUrl);
