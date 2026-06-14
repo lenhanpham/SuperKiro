@@ -38,6 +38,10 @@
 - Theo dõi sử dụng, xuất/nhập tài khoản, i18n (EN / 中文 / VN)
 - Hỗ trợ cấu hình proxy ra ngoài (SOCKS5 / HTTP)
 
+## Lưu ý
+
+Không phải tất cả IDE, công cụ CLI và Agent đều được kiểm tra đầy đủ. Chỉ có Claude Code, OpenCode và Codex được kiểm tra.
+
 ## Bắt đầu nhanh
 
 ### Docker Compose (Khuyến nghị)

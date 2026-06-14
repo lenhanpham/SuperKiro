@@ -39,7 +39,7 @@
 - Support configuring outbound proxy (SOCKS5 / HTTP)
 
 ## Note
-Not all IDEs, CLI tools, and Agents are fully tested. So far, Claude Code, OpenCode, and Codex are tested. 
+Not all IDEs, CLI tools, and Agents are fully tested. Only Claude Code, OpenCode, and Codex are tested.
 
 ## Quick Start
 

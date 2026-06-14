@@ -38,6 +38,10 @@
 - 用量追踪、账号导入导出、中英越三语
 - 支持设置出站代理（SOCKS5 / HTTP）
 
+## 注意
+
+并非所有 IDE、CLI 工具和 Agent 都经过完整测试。只有 Claude Code、OpenCode 和 Codex 经过测试。
+
 ## 快速开始
 
 ### Docker Compose（推荐）
