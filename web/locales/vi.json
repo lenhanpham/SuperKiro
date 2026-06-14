@@ -657,5 +657,11 @@
   "usage.zoomIn": "Phóng to",
   "usage.zoomOut": "Thu nhỏ",
   "usage.resetView": "Đặt lại chế độ xem",
-  "usage.outputCost": "Phí đầu ra"
+  "usage.outputCost": "Phí đầu ra",
+  "usage.status.success": "thành công",
+  "usage.status.error": "lỗi",
+  "usage.status.ok": "bình thường",
+  "usage.status.pending": "đang chờ",
+  "usage.status.unknown": "không rõ",
+  "usage.status.failed": "thất bại"
 }

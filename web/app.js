@@ -122,6 +122,11 @@ let customSelectRefreshQueued = false;
     if (accountsTab && !accountsTab.classList.contains('hidden') && typeof loadCombos === 'function') {
       loadCombos();
     }
+    // Re-render API/CLI tools if api tab is visible
+    var apiTab = document.getElementById('tabApi');
+    if (apiTab && !apiTab.classList.contains('hidden') && typeof renderCliTools === 'function') {
+      renderCliTools();
+    }
   }
   function updateLangButtons() {
     qsa('.lang-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.lang === currentLang));

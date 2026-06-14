@@ -656,5 +656,11 @@
   "usage.zoomIn": "放大",
   "usage.zoomOut": "缩小",
   "usage.resetView": "重置视图",
-  "usage.outputCost": "输出费用"
+  "usage.outputCost": "输出费用",
+  "usage.status.success": "成功",
+  "usage.status.error": "错误",
+  "usage.status.ok": "正常",
+  "usage.status.pending": "等待中",
+  "usage.status.unknown": "未知",
+  "usage.status.failed": "失败"
 }

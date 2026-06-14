@@ -656,5 +656,11 @@
   "usage.zoomIn": "Zoom in",
   "usage.zoomOut": "Zoom out",
   "usage.resetView": "Reset view",
-  "usage.outputCost": "Output Cost"
+  "usage.outputCost": "Output Cost",
+  "usage.status.success": "success",
+  "usage.status.error": "error",
+  "usage.status.ok": "ok",
+  "usage.status.pending": "pending",
+  "usage.status.unknown": "unknown",
+  "usage.status.failed": "failed"
 }

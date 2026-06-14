@@ -1048,7 +1048,7 @@ function renderRequestDetailsTable() {
   } else {
     html += '<div class="usage-details-table-wrap"><table class="usage-details-table">' +
       '<thead><tr>' +
-      '<th>' + (typeof t === 'function' ? t('usage.tabModel') : 'Model') + '</th><th>' + (typeof t === 'function' ? t('usage.provider') : 'Provider') + '</th><th>' + (typeof t === 'function' ? t('usage.status') : 'Status') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.input') : 'Input') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.output') : 'Output') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.when') : 'When') + '</th><th></th>' +
+      '<th>' + (typeof t === 'function' ? t('usage.tabModel') : 'Model') + '</th><th>' + (typeof t === 'function' ? t('usage.tabAccount') : 'Account') + '</th><th>' + (typeof t === 'function' ? t('usage.status') : 'Status') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.input') : 'Input') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.output') : 'Output') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.when') : 'When') + '</th><th></th>' +
       '</tr></thead><tbody>';
 
     for (const d of detailsData) {
@@ -1058,8 +1058,8 @@ function renderRequestDetailsTable() {
 
       html += '<tr class="usage-details-row" data-detail-idx="' + detailsData.indexOf(d) + '">' +
         '<td class="usage-details-model" title="' + escAttr(d.model) + '">' + escHtml(d.model || '-') + '</td>' +
-        '<td>' + escHtml(getProviderDisplayName(d.provider) || '-') + '</td>' +
-        '<td><span class="usage-status-dot ' + (ok ? 'success' : 'error') + '"></span> ' + escHtml(d.status) + '</td>' +
+        '<td>' + escHtml((function() { var nameMap = (usageState.stats || {}).accountNames || {}; var name = nameMap[d.accountId] || d.accountId || '-'; return name.length > 6 ? name.substring(0, 6) + '\u2026' : name; })()) + '</td>' +
+        '<td><span class="usage-status-dot ' + (ok ? 'success' : 'error') + '"></span> ' + escHtml(translateStatus(d.status)) + '</td>' +
         '<td class="text-right">' + fmtNum(inputTokens) + '</td>' +
         '<td class="text-right">' + fmtNum(outputTokens) + '</td>' +
         '<td class="text-right text-text-muted whitespace-nowrap"><span class="usage-time-ago" data-ts="' + d.timestamp + '">' + timeAgo(d.timestamp) + '</span></td>' +
@@ -1161,7 +1161,7 @@ function renderDetailDrawer() {
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.timestamp') : 'Timestamp:') + '</span> <span>' + new Date(d.timestamp).toLocaleString() + '</span></div>' +
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.provider') : 'Provider:') + '</span> <span class="font-medium">' + escHtml(getProviderDisplayName(d.provider) || '-') + '</span></div>' +
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.model') : 'Model:') + '</span> <span class="font-mono">' + escHtml(d.model || '-') + '</span></div>' +
-    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.status') : 'Status:') + '</span> <span class="' + (d.status === 'success' ? 'text-success' : 'text-error') + '">' + escHtml(d.status) + '</span></div>' +
+    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.status') : 'Status:') + '</span> <span class="' + (d.status === 'success' ? 'text-success' : 'text-error') + '">' + escHtml(translateStatus(d.status)) + '</span></div>' +
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.latency') : 'Latency:') + '</span> <span class="font-mono">' + (typeof t === 'function' ? t('usage.drawer.ttft') : 'TTFT') + ' ' + (d.latency?.ttft || 0) + 'ms / Total ' + (d.latency?.total || 0) + 'ms</span></div>' +
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.inputTokens') : 'Input Tokens:') + '</span> <span class="font-mono">' + fmtNum(inputTokens) + '</span></div>' +
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.outputTokens') : 'Output Tokens:') + '</span> <span class="font-mono">' + fmtNum(outputTokens) + '</span></div>' +
@@ -1192,12 +1192,22 @@ function renderDetailDrawer() {
 }
 
 // ─── Main Render ─────────────────────────────────────────
+function translateStatus(status) {
+  var map = { 'success': 'usage.status.success', 'ok': 'usage.status.ok', 'error': 'usage.status.error', 'failed': 'usage.status.failed', 'pending': 'usage.status.pending' };
+  var key = map[status];
+  return key ? (typeof t === 'function' ? t(key) : status) : status;
+}
+
 function renderUsagePage() {
+  // Re-render tab bar so Overview/Details labels get translated
+  try { renderUsageTabs(); } catch(e) {}
   if (usageState.activeTab === 'overview') {
     try { renderOverviewCards(); } catch(e) { console.error('[Usage] overviewCards:', e); }
     try { renderTopology(); } catch(e) { console.error('[Usage] topology:', e); }
     try { renderRecentRequests(); } catch(e) { console.error('[Usage] recentRequests:', e); }
     try { renderUsageTable(); } catch(e) { console.error('[Usage] usageTable:', e); }
+  } else if (usageState.activeTab === 'details') {
+    try { renderRequestDetailsTable(); } catch(e) { console.error('[Usage] detailsTable:', e); }
   }
   // Chart is rendered separately via fetchUsageChart
 }
