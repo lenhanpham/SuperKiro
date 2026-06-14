@@ -38,6 +38,9 @@
 - Usage tracking, account import/export, i18n (CN / EN / VN)
 - Support configuring outbound proxy (SOCKS5 / HTTP)
 
+## Note
+Not all IDEs, CLI tools, and Agents are fully tested. So far, Claude Code, OpenCode, and Codex are tested. 
+
 ## Quick Start
 
 ### Docker Compose (Recommended)
