@@ -56,20 +56,20 @@ function fmtTokens(n) {
 function fmtTokenFull(n) { return fmtNum(n); }
 
 function timeAgo(ts) {
-  if (!ts) return 'Never';
+  if (!ts) return (typeof t === 'function' ? t('usage.time.never') : 'Never');
   const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
-  if (diff < 10) return 'Just now';
-  if (diff < 60) return diff + 's ago';
-  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-  return Math.floor(diff / 86400) + 'd ago';
+  if (diff < 10) return (typeof t === 'function' ? t('usage.time.justNow') : 'Just now');
+  if (diff < 60) return (typeof t === 'function' ? t('usage.time.secondsAgo', diff) : 's ago');
+  if (diff < 3600) return (typeof t === 'function' ? t('usage.time.minutesAgo', Math.floor(diff / 60)) : 'm ago');
+  if (diff < 86400) return (typeof t === 'function' ? t('usage.time.hoursAgo', Math.floor(diff / 3600)) : 'h ago');
+  return (typeof t === 'function' ? t('usage.time.daysAgo', Math.floor(diff / 86400)) : 'd ago');
 }
 
 function fmtTime(iso) {
-  if (!iso) return 'Never';
+  if (!iso) return (typeof t === 'function' ? t('usage.time.never') : 'Never');
   const diffMins = Math.floor((Date.now() - new Date(iso)) / 60000);
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return diffMins + 'm ago';
+  if (diffMins < 1) return (typeof t === 'function' ? t('usage.time.justNow') : 'Just now');
+  if (diffMins < 60) return (typeof t === 'function' ? t('usage.time.minutesAgo', diffMins) : 'm ago');
   if (diffMins < 1440) return Math.floor(diffMins / 60) + 'h ago';
   return new Date(iso).toLocaleDateString();
 }
@@ -244,7 +244,7 @@ function renderTopology() {
 
 
   if (accounts.length === 0) {
-    container.innerHTML = '<div class="usage-empty-state">No accounts connected</div>';
+    container.innerHTML = '<div class="usage-empty-state">' + (typeof t === 'function' ? t('usage.noAccountsConnected') : 'No accounts connected') + '</div>';
     topoSvgBuilt = false;
     return;
   }
@@ -284,12 +284,12 @@ function renderTopology() {
 
   // Build zoom bar HTML
   let html = '<div class="usage-topo-zoom-bar">' +
-    '<button class="usage-topo-zoom-btn" data-zoom="in" title="Zoom in">' +
+    '<button class="usage-topo-zoom-btn" data-zoom="in" title="' + (typeof t === 'function' ? t('usage.zoomIn') : 'Zoom in') + '">' +
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>' +
     '<span class="usage-topo-zoom-label" id="topoZoomLabel">' + Math.round(topoZoom * 100) + '%</span>' +
-    '<button class="usage-topo-zoom-btn" data-zoom="out" title="Zoom out">' +
+    '<button class="usage-topo-zoom-btn" data-zoom="out" title="' + (typeof t === 'function' ? t('usage.zoomOut') : 'Zoom out') + '">' +
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>' +
-    '<button class="usage-topo-zoom-btn" data-zoom="reset" title="Reset view">' +
+    '<button class="usage-topo-zoom-btn" data-zoom="reset" title="' + (typeof t === 'function' ? t('usage.resetView') : 'Reset view') + '">' +
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>' +
     '</div>';
 
@@ -415,10 +415,10 @@ function renderTopology() {
 
   // Center SuperKiro node
   svg += '<g class="usage-topo-center">';
-  svg += '<title>SuperKiro Router</title>';
+  svg += '<title>' + (typeof t === 'function' ? t('usage.superKiroRouter') : 'SuperKiro Router') + '</title>';
   svg += '<rect x="' + (cx - centerNodeW / 2) + '" y="' + (cy - centerNodeH / 2) + '" width="' + centerNodeW + '" height="' + centerNodeH + '" ' +
     'fill="none" stroke="var(--primary)" stroke-width="2.5" rx="12" ry="12"/>';
-  svg += '<text x="' + cx + '" y="' + (cy + 5) + '" text-anchor="middle" fill="var(--foreground)" font-size="' + centerFontSize + '" font-weight="700">SuperKiro</text>';
+  svg += '<text x="' + cx + '" y="' + (cy + 5) + '" text-anchor="middle" fill="var(--foreground)" font-size="' + centerFontSize + '" font-weight="700">' + (typeof t === 'function' ? t('usage.superKiro') : 'SuperKiro') + '</text>';
   if (activeSet.size > 0) {
     const badgeX = cx + centerNodeW / 2 - 10;
     const badgeW = 20;
@@ -551,10 +551,10 @@ function renderOverviewCards() {
   }
 
   container.innerHTML =
-    '<div class="usage-card overview-card"><div class="overview-card-title">Total Requests</div><div class="overview-card-value">' + fmtNum(stats.totalRequests) + '</div></div>' +
-    '<div class="usage-card overview-card"><div class="overview-card-title">Input Tokens</div><div class="overview-card-value text-primary">' + fmtTokenFull(stats.totalPromptTokens) + '</div></div>' +
-    '<div class="usage-card overview-card"><div class="overview-card-title">Output Tokens</div><div class="overview-card-value text-success">' + fmtTokenFull(stats.totalCompletionTokens) + '</div></div>' +
-    '<div class="usage-card overview-card"><div class="overview-card-title">Est. Cost</div><div class="overview-card-value text-warning">~' + fmtCost(stats.totalCost) + '</div><div class="overview-card-sub">Estimated, not actual billing</div></div>';
+    '<div class="usage-card overview-card"><div class="overview-card-title">' + (typeof t === 'function' ? t('usage.totalRequests') : 'Total Requests') + '</div><div class="overview-card-value">' + fmtNum(stats.totalRequests) + '</div></div>' +
+    '<div class="usage-card overview-card"><div class="overview-card-title">' + (typeof t === 'function' ? t('usage.inputTokens') : 'Input Tokens') + '</div><div class="overview-card-value text-primary">' + fmtTokenFull(stats.totalPromptTokens) + '</div></div>' +
+    '<div class="usage-card overview-card"><div class="overview-card-title">' + (typeof t === 'function' ? t('usage.outputTokens') : 'Output Tokens') + '</div><div class="overview-card-value text-success">' + fmtTokenFull(stats.totalCompletionTokens) + '</div></div>' +
+    '<div class="usage-card overview-card"><div class="overview-card-title">' + (typeof t === 'function' ? t('usage.estimatedCost') : 'Est. Cost') + '</div><div class="overview-card-value text-warning">~' + fmtCost(stats.totalCost) + '</div><div class="overview-card-sub">' + (typeof t === 'function' ? t('usage.costDisclaimer') : 'Estimated, not actual billing') + '</div></div>';
 }
 
 // ─── Recent Requests Table ───────────────────────────────
@@ -570,13 +570,13 @@ function renderRecentRequests() {
 
   const requests = stats.recentRequests || [];
 
-  let html = '<div class="usage-recent-header">Recent Requests</div>';
+  let html = '<div class="usage-recent-header">' + (typeof t === 'function' ? t('usage.recentRequests') : 'Recent Requests') + '</div>';
 
   if (requests.length === 0) {
     html += '<div class="usage-empty-state">No requests yet.</div>';
   } else {
     html += '<div class="usage-recent-table-wrap"><table class="usage-recent-table">' +
-      '<thead><tr><th></th><th>Model</th><th class="text-right">In / Out</th><th class="text-right">When</th></tr></thead><tbody>';
+      '<thead><tr><th></th><th>' + (typeof t === 'function' ? t('usage.tabModel') : 'Model') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.inOut') : 'In / Out') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.when') : 'When') + '</th></tr></thead><tbody>';
 
     for (const r of requests) {
       html += '<tr>' +
@@ -605,9 +605,9 @@ function renderChart() {
   if (!hasData) {
     container.innerHTML =
       '<div class="usage-chart-controls">' +
-      '<div class="usage-view-toggle"><button class="usage-toggle-btn active" data-chart-view="tokens">Tokens</button><button class="usage-toggle-btn" data-chart-view="cost">Cost</button></div>' +
+      '<div class="usage-view-toggle"><button class="usage-toggle-btn active" data-chart-view="tokens">' + (typeof t === 'function' ? t('usage.viewTokens') : 'Tokens') + '</button><button class="usage-toggle-btn" data-chart-view="cost">' + (typeof t === 'function' ? t('usage.viewCost') : 'Cost') + '</button></div>' +
       '</div>' +
-      '<div class="usage-empty-state" style="height:200px;display:flex;align-items:center;justify-content:center">No data for this period</div>';
+      '<div class="usage-empty-state" style="height:200px;display:flex;align-items:center;justify-content:center">' + (typeof t === 'function' ? t('usage.noDataForPeriod') : 'No data for this period') + '</div>';
     bindChartToggle();
     return;
   }
@@ -642,7 +642,7 @@ function renderChart() {
   const fillColor = viewMode === 'tokens' ? 'rgba(99,102,241,0.15)' : 'rgba(245,158,11,0.15)';
 
   let html = '<div class="usage-chart-controls">' +
-    '<div class="usage-view-toggle"><button class="usage-toggle-btn' + (viewMode === 'tokens' ? ' active' : '') + '" data-chart-view="tokens">Tokens</button><button class="usage-toggle-btn' + (viewMode === 'cost' ? ' active' : '') + '" data-chart-view="cost">Cost</button></div>' +
+    '<div class="usage-view-toggle"><button class="usage-toggle-btn' + (viewMode === 'tokens' ? ' active' : '') + '" data-chart-view="tokens">' + (typeof t === 'function' ? t('usage.viewTokens') : 'Tokens') + '</button><button class="usage-toggle-btn' + (viewMode === 'cost' ? ' active' : '') + '" data-chart-view="cost">' + (typeof t === 'function' ? t('usage.viewCost') : 'Cost') + '</button></div>' +
     '</div>';
 
   html += '<svg width="100%" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '" class="usage-chart-svg">';
@@ -706,29 +706,29 @@ function renderUsageTable() {
     case 'model':
       groupMap = stats.byModel || {};
       columns = [
-        { field: 'key', label: 'Model' },
-        { field: 'requests', label: 'Requests', align: 'right' },
+        { field: 'key', label: (typeof t === 'function' ? t('usage.tabModel') : 'Model') },
+        { field: 'requests', label: (typeof t === 'function' ? t('usage.requests') : 'Requests'), align: 'right' },
       ];
       break;
     case 'account':
       groupMap = stats.byAccount || {};
       columns = [
-        { field: 'key', label: 'Account' },
-        { field: 'requests', label: 'Requests', align: 'right' },
+        { field: 'key', label: (typeof t === 'function' ? t('usage.tabAccount') : 'Account') },
+        { field: 'requests', label: (typeof t === 'function' ? t('usage.requests') : 'Requests'), align: 'right' },
       ];
       break;
     case 'apiKey':
       groupMap = stats.byApiKey || {};
       columns = [
-        { field: 'key', label: 'API Key' },
-        { field: 'requests', label: 'Requests', align: 'right' },
+        { field: 'key', label: (typeof t === 'function' ? t('usage.tabApiKey') : 'API Key') },
+        { field: 'requests', label: (typeof t === 'function' ? t('usage.requests') : 'Requests'), align: 'right' },
       ];
       break;
     case 'endpoint':
       groupMap = stats.byEndpoint || {};
       columns = [
-        { field: 'key', label: 'Endpoint' },
-        { field: 'requests', label: 'Requests', align: 'right' },
+        { field: 'key', label: (typeof t === 'function' ? t('usage.tabEndpoint') : 'Endpoint') },
+        { field: 'requests', label: (typeof t === 'function' ? t('usage.requests') : 'Requests'), align: 'right' },
       ];
       break;
   }
@@ -766,14 +766,14 @@ function renderUsageTable() {
 
   const valueColumns = viewMode === 'tokens'
     ? [
-        { field: 'promptTokens', label: 'Input Tokens', align: 'right' },
-        { field: 'completionTokens', label: 'Output Tokens', align: 'right' },
-        { field: 'totalTokens', label: 'Total Tokens', align: 'right' },
+        { field: 'promptTokens', label: (typeof t === 'function' ? t('usage.inputTokensCol') : 'Input Tokens'), align: 'right' },
+        { field: 'completionTokens', label: (typeof t === 'function' ? t('usage.outputTokensCol') : 'Output Tokens'), align: 'right' },
+        { field: 'totalTokens', label: (typeof t === 'function' ? t('usage.totalTokens') : 'Total Tokens'), align: 'right' },
       ]
     : [
-        { field: 'promptTokens', label: 'Input Cost', align: 'right' },
-        { field: 'completionTokens', label: 'Output Cost', align: 'right' },
-        { field: 'cost', label: 'Total Cost', align: 'right' },
+        { field: 'promptTokens', label: (typeof t === 'function' ? t('usage.inputCost') : 'Input Cost'), align: 'right' },
+        { field: 'completionTokens', label: (typeof t === 'function' ? t('usage.outputCost') : 'Output Cost'), align: 'right' },
+        { field: 'cost', label: (typeof t === 'function' ? t('usage.totalCost') : 'Total Cost'), align: 'right' },
       ];
 
   const allCols = columns.concat(valueColumns);
@@ -781,14 +781,14 @@ function renderUsageTable() {
   let html =
     '<div class="usage-table-toolbar">' +
     '<select class="usage-table-select" id="usageTableView">' +
-    '<option value="model"' + (tableView === 'model' ? ' selected' : '') + '>Usage by Model</option>' +
-    '<option value="account"' + (tableView === 'account' ? ' selected' : '') + '>Usage by Account</option>' +
-    '<option value="apiKey"' + (tableView === 'apiKey' ? ' selected' : '') + '>Usage by API Key</option>' +
-    '<option value="endpoint"' + (tableView === 'endpoint' ? ' selected' : '') + '>Usage by Endpoint</option>' +
+    '<option value="model"' + (tableView === 'model' ? ' selected' : '') + '>' + (typeof t === 'function' ? t('usage.usageByModel') : 'Usage by Model') + '</option>' +
+    '<option value="account"' + (tableView === 'account' ? ' selected' : '') + '>' + (typeof t === 'function' ? t('usage.usageByAccount') : 'Usage by Account') + '</option>' +
+    '<option value="apiKey"' + (tableView === 'apiKey' ? ' selected' : '') + '>' + (typeof t === 'function' ? t('usage.usageByApiKey') : 'Usage by API Key') + '</option>' +
+    '<option value="endpoint"' + (tableView === 'endpoint' ? ' selected' : '') + '>' + (typeof t === 'function' ? t('usage.usageByEndpoint') : 'Usage by Endpoint') + '</option>' +
     '</select>' +
     '<div class="usage-view-toggle">' +
-    '<button class="usage-toggle-btn' + (viewMode === 'tokens' ? ' active' : '') + '" data-table-view-mode="tokens">Tokens</button>' +
-    '<button class="usage-toggle-btn' + (viewMode === 'costs' ? ' active' : '') + '" data-table-view-mode="costs">Costs</button>' +
+    '<button class="usage-toggle-btn' + (viewMode === 'tokens' ? ' active' : '') + '" data-table-view-mode="tokens">' + (typeof t === 'function' ? t('usage.viewTokens') : 'Tokens') + '</button>' +
+    '<button class="usage-toggle-btn' + (viewMode === 'costs' ? ' active' : '') + '" data-table-view-mode="costs">' + (typeof t === 'function' ? t('usage.costs') : 'Costs') + '</button>' +
     '</div>' +
     '</div>' +
     '<div class="usage-table-wrap"><table class="usage-data-table"><thead><tr>';
@@ -822,7 +822,7 @@ function renderUsageTable() {
 
   // Total row
   html += '<tr class="usage-summary-row">';
-  html += '<td><strong>Total</strong></td>';
+  html += '<td><strong>' + (typeof t === 'function' ? t('usage.total') : 'Total') + '</strong></td>';
   html += '<td class="text-right"><strong>' + fmtNum(totalRow.requests) + '</strong></td>';
   if (viewMode === 'tokens') {
     html +=
@@ -888,7 +888,7 @@ function renderPeriodSelector() {
   if (!container) return;
 
   const periods = [
-    { value: 'today', label: 'Today' },
+    { value: 'today', label: (typeof t === 'function' ? t('usage.period.today') : 'Today') },
     { value: '24h', label: '24h' },
     { value: '7d', label: '7D' },
     { value: '30d', label: '30D' },
@@ -920,8 +920,8 @@ function renderUsageTabs() {
   if (!container) return;
   container.innerHTML =
     '<div class="usage-tabs-bar">' +
-    '<button class="usage-tab-btn' + (usageState.activeTab === 'overview' ? ' active' : '') + '" data-tab="overview">Overview</button>' +
-    '<button class="usage-tab-btn' + (usageState.activeTab === 'details' ? ' active' : '') + '" data-tab="details">Details</button>' +
+    '<button class="usage-tab-btn' + (usageState.activeTab === 'overview' ? ' active' : '') + '" data-tab="overview">' + (typeof t === 'function' ? t('usage.overview') : 'Overview') + '</button>' +
+    '<button class="usage-tab-btn' + (usageState.activeTab === 'details' ? ' active' : '') + '" data-tab="details">' + (typeof t === 'function' ? t('usage.details') : 'Details') + '</button>' +
     '</div>';
 
   container.querySelectorAll('.usage-tab-btn').forEach(btn => {
@@ -1030,14 +1030,14 @@ function renderRequestDetailsTable() {
   // Filters bar
   html += '<div class="usage-details-filters">' +
     '<select class="usage-details-filter-select" id="detailsProviderFilter">' +
-    '<option value="">All Providers</option>';
+    '<option value="">' + (typeof t === 'function' ? t('usage.allProviders') : 'All Providers') + '</option>';
   for (const p of detailsProviders) {
     html += '<option value="' + escAttr(p.id) + '"' + (detailsFilters.provider === p.id ? ' selected' : '') + '>' + escHtml(p.name) + '</option>';
   }
   html += '</select>' +
-    '<input type="date" class="usage-details-filter-input" id="detailsStartDate" value="' + escAttr(detailsFilters.startDate) + '" placeholder="Start date">' +
-    '<input type="date" class="usage-details-filter-input" id="detailsEndDate" value="' + escAttr(detailsFilters.endDate) + '" placeholder="End date">' +
-    '<button class="usage-details-filter-btn" id="detailsFilterApply">Filter</button>' +
+    '<input type="date" class="usage-details-filter-input" id="detailsStartDate" value="' + escAttr(detailsFilters.startDate) + '" placeholder="' + (typeof t === 'function' ? t('usage.placeholder.startDate') : 'Start date') + '">' +
+    '<input type="date" class="usage-details-filter-input" id="detailsEndDate" value="' + escAttr(detailsFilters.endDate) + '" placeholder="' + (typeof t === 'function' ? t('usage.placeholder.endDate') : 'End date') + '">' +
+    '<button class="usage-details-filter-btn" id="detailsFilterApply">' + (typeof t === 'function' ? t('usage.filter') : 'Filter') + '</button>' +
     '</div>';
 
   // Table
@@ -1048,7 +1048,7 @@ function renderRequestDetailsTable() {
   } else {
     html += '<div class="usage-details-table-wrap"><table class="usage-details-table">' +
       '<thead><tr>' +
-      '<th>Model</th><th>Provider</th><th>Status</th><th class="text-right">Input</th><th class="text-right">Output</th><th class="text-right">When</th><th></th>' +
+      '<th>' + (typeof t === 'function' ? t('usage.tabModel') : 'Model') + '</th><th>' + (typeof t === 'function' ? t('usage.provider') : 'Provider') + '</th><th>' + (typeof t === 'function' ? t('usage.status') : 'Status') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.input') : 'Input') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.output') : 'Output') + '</th><th class="text-right">' + (typeof t === 'function' ? t('usage.when') : 'When') + '</th><th></th>' +
       '</tr></thead><tbody>';
 
     for (const d of detailsData) {
@@ -1063,7 +1063,7 @@ function renderRequestDetailsTable() {
         '<td class="text-right">' + fmtNum(inputTokens) + '</td>' +
         '<td class="text-right">' + fmtNum(outputTokens) + '</td>' +
         '<td class="text-right text-text-muted whitespace-nowrap"><span class="usage-time-ago" data-ts="' + d.timestamp + '">' + timeAgo(d.timestamp) + '</span></td>' +
-        '<td class="text-right"><button class="usage-details-view-btn" data-detail-idx="' + detailsData.indexOf(d) + '">View</button></td>' +
+        '<td class="text-right"><button class="usage-details-view-btn" data-detail-idx="' + detailsData.indexOf(d) + '">' + (typeof t === 'function' ? t('usage.view') : 'View') + '</button></td>' +
         '</tr>';
     }
 
@@ -1153,36 +1153,36 @@ function renderDetailDrawer() {
 
   drawer.innerHTML =
     '<div class="usage-drawer-header">' +
-    '<h3>Request Details</h3>' +
+    '<h3>' + (typeof t === 'function' ? t('usage.requestDetails') : 'Request Details') + '</h3>' +
     '<button id="detailsDrawerClose" class="usage-drawer-close">&times;</button>' +
     '</div>' +
     '<div class="usage-drawer-body">' +
     '<div class="usage-drawer-info-grid">' +
-    '<div><span class="text-text-muted">Timestamp:</span> <span>' + new Date(d.timestamp).toLocaleString() + '</span></div>' +
-    '<div><span class="text-text-muted">Provider:</span> <span class="font-medium">' + escHtml(getProviderDisplayName(d.provider) || '-') + '</span></div>' +
-    '<div><span class="text-text-muted">Model:</span> <span class="font-mono">' + escHtml(d.model || '-') + '</span></div>' +
-    '<div><span class="text-text-muted">Status:</span> <span class="' + (d.status === 'success' ? 'text-success' : 'text-error') + '">' + escHtml(d.status) + '</span></div>' +
-    '<div><span class="text-text-muted">Latency:</span> <span class="font-mono">TTFT ' + (d.latency?.ttft || 0) + 'ms / Total ' + (d.latency?.total || 0) + 'ms</span></div>' +
-    '<div><span class="text-text-muted">Input Tokens:</span> <span class="font-mono">' + fmtNum(inputTokens) + '</span></div>' +
-    '<div><span class="text-text-muted">Output Tokens:</span> <span class="font-mono">' + fmtNum(outputTokens) + '</span></div>' +
+    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.timestamp') : 'Timestamp:') + '</span> <span>' + new Date(d.timestamp).toLocaleString() + '</span></div>' +
+    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.provider') : 'Provider:') + '</span> <span class="font-medium">' + escHtml(getProviderDisplayName(d.provider) || '-') + '</span></div>' +
+    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.model') : 'Model:') + '</span> <span class="font-mono">' + escHtml(d.model || '-') + '</span></div>' +
+    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.status') : 'Status:') + '</span> <span class="' + (d.status === 'success' ? 'text-success' : 'text-error') + '">' + escHtml(d.status) + '</span></div>' +
+    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.latency') : 'Latency:') + '</span> <span class="font-mono">' + (typeof t === 'function' ? t('usage.drawer.ttft') : 'TTFT') + ' ' + (d.latency?.ttft || 0) + 'ms / Total ' + (d.latency?.total || 0) + 'ms</span></div>' +
+    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.inputTokens') : 'Input Tokens:') + '</span> <span class="font-mono">' + fmtNum(inputTokens) + '</span></div>' +
+    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.outputTokens') : 'Output Tokens:') + '</span> <span class="font-mono">' + fmtNum(outputTokens) + '</span></div>' +
     '</div>';
 
   // Request/Response sections (collapsible)
   if (d.request) {
-    drawer.innerHTML += collapsibleSection('Client Request (Input)',
+    drawer.innerHTML += collapsibleSection((typeof t === 'function' ? t('usage.drawer.clientRequest') : 'Client Request (Input)'),
       '<pre class="usage-drawer-pre">' + escHtml(JSON.stringify(d.request, null, 2)) + '</pre>', true);
   }
   if (d.providerRequest) {
-    drawer.innerHTML += collapsibleSection('Provider Request (Translated)',
+    drawer.innerHTML += collapsibleSection((typeof t === 'function' ? t('usage.drawer.providerRequest') : 'Provider Request (Translated)'),
       '<pre class="usage-drawer-pre">' + escHtml(JSON.stringify(d.providerRequest, null, 2)) + '</pre>', false);
   }
   if (d.providerResponse) {
-    drawer.innerHTML += collapsibleSection('Provider Response (Raw)',
+    drawer.innerHTML += collapsibleSection((typeof t === 'function' ? t('usage.drawer.providerResponse') : 'Provider Response (Raw)'),
       '<pre class="usage-drawer-pre">' + escHtml(typeof d.providerResponse === 'object' ? JSON.stringify(d.providerResponse, null, 2) : d.providerResponse) + '</pre>', false);
   }
   if (d.response) {
     const respContent = d.response.content || JSON.stringify(d.response, null, 2);
-    drawer.innerHTML += collapsibleSection('Client Response (Final)',
+    drawer.innerHTML += collapsibleSection((typeof t === 'function' ? t('usage.drawer.clientResponse') : 'Client Response (Final)'),
       '<pre class="usage-drawer-pre">' + escHtml(respContent) + '</pre>', true);
   }
 

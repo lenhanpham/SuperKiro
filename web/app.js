@@ -112,6 +112,16 @@ let customSelectRefreshQueued = false;
     renderAccounts();
     renderPromptRules();
     if (typeof renderApiKeys === 'function') renderApiKeys();
+    // Re-render usage page if it's visible
+    var usageTab = document.getElementById('tabUsage');
+    if (usageTab && !usageTab.classList.contains('hidden') && typeof renderUsagePage === 'function') {
+      renderUsagePage();
+    }
+    // Re-render combos if accounts tab is visible
+    var accountsTab = document.getElementById('tabAccounts');
+    if (accountsTab && !accountsTab.classList.contains('hidden') && typeof loadCombos === 'function') {
+      loadCombos();
+    }
   }
   function updateLangButtons() {
     qsa('.lang-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.lang === currentLang));
