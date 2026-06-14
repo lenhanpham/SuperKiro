@@ -2560,6 +2560,9 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 	// verify password
 	password := r.Header.Get("X-Admin-Password")
 	if password == "" {
+		password = r.URL.Query().Get("pwd")
+	}
+	if password == "" {
 		cookie, _ := r.Cookie("admin_password")
 		if cookie != nil {
 			password = cookie.Value

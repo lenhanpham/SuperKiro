@@ -108,8 +108,6 @@
                 data-i18n="tabs.settings"></span></button>
             <button type="button" class="tab" data-tab="api"><i class="fa-solid fa-plug tab-icon"></i><span
                 data-i18n="tabs.api"></span></button>
-            <button type="button" class="tab" data-tab="combos"><i class="fa-solid fa-layer-group tab-icon"></i><span
-                data-i18n="tabs.combos"></span></button>
             <button type="button" class="tab" data-tab="usage"><i class="fa-solid fa-chart-line tab-icon"></i><span
                 data-i18n="tabs.usage"></span></button>
           </div>
@@ -282,7 +280,20 @@
             </select>
           </div>
 
+
           <div id="accountsList"></div>
+
+          <!-- Combos section (embedded in Accounts tab) -->
+          <div class="card" style="margin-top:1rem;">
+            <div class="card-header">
+              <span class="card-title" data-i18n="combos.title"></span>
+              <div class="card-actions">
+                <button class="btn btn-primary btn-sm" id="createComboBtn"><i class="fa-solid fa-plus"
+                    aria-hidden="true"></i><span class="btn-text" data-i18n="combos.add"></span></button>
+              </div>
+            </div>
+            <div id="combosList" style="margin-top:0.75rem;"></div>
+          </div>
         </div>
       </div>
 
@@ -552,19 +563,6 @@
         </section>
       </div>
 
-      <!-- Combos tab -->
-      <div id="tabCombos" class="tab-content hidden">
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title" data-i18n="combos.title"></span>
-            <div class="card-actions">
-              <button class="btn btn-primary btn-sm" id="createComboBtn"><i class="fa-solid fa-plus"
-                  aria-hidden="true"></i><span class="btn-text" data-i18n="combos.add"></span></button>
-            </div>
-          </div>
-          <div id="combosList" style="margin-top:0.75rem;"></div>
-        </div>
-      </div>
     </div>
 
     <!-- Footer -->

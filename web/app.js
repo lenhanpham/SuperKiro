@@ -654,6 +654,7 @@ let customSelectRefreshQueued = false;
   // Data loaders
   async function loadData() {
     await Promise.all([loadStats(), loadAccounts(), loadSettings(), loadVersion(), loadApiKeys()]);
+    if (typeof loadCombos === 'function') loadCombos();
     renderEndpointCode('claudeEndpoint', baseUrl + '/v1/messages');
     renderEndpointCode('openaiEndpoint', baseUrl + '/v1/chat/completions');
     renderEndpointCode('openaiResponsesEndpoint', baseUrl + '/v1/responses');
@@ -797,7 +798,7 @@ let customSelectRefreshQueued = false;
     $('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');
     if (tab === 'usage') { if (typeof initUsagePage === 'function') initUsagePage(); }
     else { if (typeof destroyUsagePage === 'function') destroyUsagePage(); }
-    if (tab === 'combos') { loadCombos(); }
+    if (tab === 'accounts') { if (typeof loadCombos === 'function') loadCombos(); }
     if (tab === 'api') { renderCliTools(); if (apiKeysCache.length === 0) loadApiKeys(); loadCliToolStatus(); }
   }
   // Event wiring

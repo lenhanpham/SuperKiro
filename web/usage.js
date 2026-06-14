@@ -33,6 +33,11 @@ let topoDragRaf = null;
 let topoListenersRegistered = false;
 let topoDragState = { dragging: false, startX: 0, startY: 0, panStartX: 0, panStartY: 0 };
 
+// Edge state tracking (9router-style)
+const FE_ACTIVE_TIMEOUT_MS = 60000;
+const FE_ACTIVE_TICK_MS = 1000;
+let topoFirstSeen = {};
+let topoTickTimer = null;
 // Estimate text width in SVG based on character count and font size
 function estimateTextWidth(text, fontSize) {
   if (!text) return 0;
@@ -89,7 +94,10 @@ async function fetchUsageStats(period) {
     const res = await api('/usage/stats?period=' + (period || usageState.period));
     if (res.ok) {
       usageState.stats = await res.json();
+      console.log('[Usage] stats loaded, totalRequests:', usageState.stats.totalRequests);
       renderUsagePage();
+    } else {
+      console.error('[Usage] fetchStats failed:', res.status, res.statusText);
     }
   } catch (e) { console.error('[Usage] fetchStats error:', e); }
 }
@@ -110,7 +118,7 @@ function connectUsageSSE() {
     usageState.eventSource.close();
   }
   try {
-    const es = new EventSource('/admin/api/usage/stream');
+    const es = new EventSource('/admin/api/usage/stream?pwd=' + encodeURIComponent(password));
     usageState.eventSource = es;
 
     es.onmessage = function (e) {
@@ -124,8 +132,8 @@ function connectUsageSSE() {
             usageState.stats = data;
           }
           if (usageState.activeTab === 'overview') {
-            renderRecentRequests();
-            renderTopology();
+            try { renderRecentRequests(); } catch(e) { console.error('[Usage] SSE recentRequests:', e); }
+            try { renderTopology(); } catch(e) { console.error('[Usage] SSE topology:', e); }
           }
         }
       } catch (err) { /* ignore parse errors */ }
@@ -169,20 +177,71 @@ function rectIntersect(cx, cy, w, h, angle) {
 function renderTopology() {
   const container = document.getElementById('usageTopology');
   if (!container) return;
-
-  const stats = usageState.stats;
-  if (!stats) {
-    container.innerHTML = '<div class="usage-empty-state">No data yet</div>';
+  const topoStats = usageState.stats;
+  if (!topoStats) {
+    container.innerHTML = '<div class="usage-loading">Loading...</div>';
     topoSvgBuilt = false;
     return;
   }
+  // Clean up old first-seen entries for accounts no longer active
+  const currentActive = new Set((topoStats.activeRequests || []).map(r => r.accountId));
+  for (const k of Object.keys(topoFirstSeen)) {
+    if (!currentActive.has(k)) delete topoFirstSeen[k];
+  }
+  // Tick timer for active timeout (create once)
+  if (!topoTickTimer) {
+    topoTickTimer = setInterval(function() {
+      const now = Date.now();
+      const activeReqs = usageState.stats?.activeRequests || [];
+      let timedOut = false;
+      for (const r of activeReqs) {
+        const ts = topoFirstSeen[r.accountId];
+        if (ts && now - ts >= FE_ACTIVE_TIMEOUT_MS) {
+          timedOut = true;
+        }
+      }
+      if (timedOut) {
+        // Force re-render to apply timeout
+        renderTopology();
+      } else if (usageState.stats?.activeRequests?.length > 0) {
+        // Tick active dots animation by re-applying transform
+        const container = document.getElementById('usageTopology');
+        if (container && container.querySelector('svg')) {
+          applyTopoTransform();
+        }
+      }
+    }, FE_ACTIVE_TICK_MS);
+  }
 
+  const stats = topoStats;
   const historicalAccounts = new Set(Object.keys(stats.byAccount || {}));
   const activeReqs = stats.activeRequests || [];
-  const activeAccounts = new Set(activeReqs.map(r => r.accountId));
+  const rawActiveAccounts = new Set(activeReqs.map(r => r.accountId));
+  
+  // Track first-seen per account (for 60s timeout)
+  const now = Date.now();
+  for (const a of rawActiveAccounts) {
+    if (!topoFirstSeen[a]) topoFirstSeen[a] = now;
+  }
+  for (const a of Object.keys(topoFirstSeen)) {
+    if (!rawActiveAccounts.has(a)) delete topoFirstSeen[a];
+  }
+  // Apply timeout: accounts active > 60s are excluded
+  const activeAccounts = new Set();
+  for (const a of rawActiveAccounts) {
+    const ts = topoFirstSeen[a];
+    if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) activeAccounts.add(a);
+  }
+
   const allAccounts = new Set([...historicalAccounts, ...activeAccounts]);
   const accounts = Array.from(allAccounts).filter(Boolean);
   const activeSet = activeAccounts;
+
+  // Determine "last" account (most recent request)
+  const lastAccountId = (stats.recentRequests && stats.recentRequests.length > 0)
+    ? stats.recentRequests[0].accountId : null;
+
+
 
   if (accounts.length === 0) {
     container.innerHTML = '<div class="usage-empty-state">No accounts connected</div>';
@@ -234,32 +293,85 @@ function renderTopology() {
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>' +
     '</div>';
 
-  let svg = '<svg width="100%" height="100%" viewBox="0 0 ' + width + ' ' + height + '" class="usage-topology-svg">';
+  let svg = '<svg width="100%" height="100%" viewBox="0 0 ' + width + ' ' + height + '" class="usage-topology-svg">' +
+    '<defs><filter id="activeGlow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
 
   // Transform group
   svg += '<g id="topo-transform" transform="translate(' + topoPanX + ',' + topoPanY + ') scale(' + topoZoom + ')">';
 
-  // Connection lines — from edge of center box to edge of account box
+  // Connection lines — 4 edge states (error/active/last/default) + smart handles
   for (let i = 0; i < n; i++) {
+    const acctId = accounts[i];
     const angle = (2 * Math.PI * i) / n - Math.PI / 2;
     const ax = cx + rx * Math.cos(angle);
     const ay = cy + ry * Math.sin(angle);
-    const isActive = activeSet.has(accounts[i]);
     const acctW = accountNodeWidths[i];
+    
+    // Determine edge state
+    const isActive = activeSet.has(acctId);
+    const isLast = !isActive && lastAccountId === acctId;
+    // Error: check if any recent request for this account has non-success status
+    const hasError = !isActive && (stats.recentRequests || []).some(r =>
+      r.accountId === acctId && r.status && r.status !== 'success' && r.status !== 'ok'
+    );
+    
+    // Edge style matching 9router
+    let edgeColor, edgeWidth, edgeOpacity;
+    if (hasError) {
+      edgeColor = '#ef4444'; edgeWidth = 2.5; edgeOpacity = 0.9;
+    } else if (isActive) {
+      edgeColor = '#22c55e'; edgeWidth = 2.5; edgeOpacity = 0.9;
+    } else if (isLast) {
+      edgeColor = '#f59e0b'; edgeWidth = 2; edgeOpacity = 0.7;
+    } else {
+      edgeColor = 'var(--color-border)'; edgeWidth = 1; edgeOpacity = 0.3;
+    }
+    
+    // Smart handle positioning matching 9router
+    let sourceHandle, targetHandle;
+    // angle is from -π/2 (top) clockwise
+    if (Math.abs(angle + Math.PI / 2) < Math.PI / 4 || Math.abs(angle - 3 * Math.PI / 2) < Math.PI / 4) {
+      // Top quadrant — node above router
+      sourceHandle = 'top'; targetHandle = 'bottom';
+    } else if (Math.abs(angle - Math.PI / 2) < Math.PI / 4) {
+      // Bottom quadrant — node below router
+      sourceHandle = 'bottom'; targetHandle = 'top';
+    } else if (ax > cx) {
+      // Right side
+      sourceHandle = 'right'; targetHandle = 'left';
+    } else {
+      // Left side
+      sourceHandle = 'left'; targetHandle = 'right';
+    }
+    
+    // Compute start/end points at the selected edges of each box
+    const edgeOffsets = {
+      top:    { x: 0, y: -centerNodeH/2 },
+      bottom: { x: 0, y: centerNodeH/2 },
+      left:   { x: -centerNodeW/2, y: 0 },
+      right:  { x: centerNodeW/2, y: 0 },
+    };
+    const acctEdgeOffsets = {
+      top:    { x: 0, y: -accountNodeH/2 },
+      bottom: { x: 0, y: accountNodeH/2 },
+      left:   { x: -acctW/2, y: 0 },
+      right:  { x: acctW/2, y: 0 },
+    };
+    const startOff = edgeOffsets[sourceHandle];
+    const endOff = acctEdgeOffsets[targetHandle];
+    const sx = cx + startOff.x, sy = cy + startOff.y;
+    const ex = ax + endOff.x, ey = ay + endOff.y;
 
-    // Start at center box boundary
-    const start = rectIntersect(cx, cy, centerNodeW, centerNodeH, angle);
-    // End at account box boundary (opposite direction)
-    const end = rectIntersect(ax, ay, acctW, accountNodeH, angle + Math.PI);
-
-    svg += '<line x1="' + start.x + '" y1="' + start.y + '" x2="' + end.x + '" y2="' + end.y + '" ' +
-      'stroke="' + (isActive ? 'var(--success)' : 'var(--info)') + '" stroke-width="' + (isActive ? '2.5' : '2') + '" ' +
-      'stroke-dasharray="' + (isActive ? '6 3' : 'none') + '" class="usage-topo-edge' + (isActive ? ' active' : '') + '" />';
+    svg += '<line x1="' + sx + '" y1="' + sy + '" x2="' + ex + '" y2="' + ey + '" ' +
+      'stroke="' + edgeColor + '" stroke-width="' + edgeWidth + '" ' +
+      'stroke-opacity="' + edgeOpacity + '" ' +
+      'stroke-dasharray="' + (isActive ? '8 4' : 'none') + '" ' +
+      'class="usage-topo-edge' + (isActive ? ' active' : '') + '" />';
 
     if (isActive) {
-      svg += '<circle cx="' + start.x + '" cy="' + start.y + '" r="4" fill="var(--primary)" class="usage-topo-flow-dot">' +
-        '<animate attributeName="cx" values="' + start.x + ';' + end.x + '" dur="1.5s" repeatCount="indefinite"/>' +
-        '<animate attributeName="cy" values="' + start.y + ';' + end.y + '" dur="1.5s" repeatCount="indefinite"/>' +
+      svg += '<circle cx="' + sx + '" cy="' + sy + '" r="4" fill="#22c55e" class="usage-topo-flow-dot">' +
+        '<animate attributeName="cx" values="' + sx + ';' + ex + '" dur="1.5s" repeatCount="indefinite"/>' +
+        '<animate attributeName="cy" values="' + sy + ';' + ey + '" dur="1.5s" repeatCount="indefinite"/>' +
         '<animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite"/>' +
         '</circle>';
     }
@@ -275,20 +387,28 @@ function renderTopology() {
     const displayName = fullName.length > 6 ? fullName.substring(0, 6) + '\u2026' : fullName;
     const nodeW = accountNodeWidths[i];
 
-    svg += '<g class="usage-topo-node' + (isActive ? ' active' : '') + '">';
+    svg += '<g class="usage-topo-node' + (isActive ? ' active' : '') + '" data-account="' + escAttr(accounts[i]) + '">';
     // Tooltip
     svg += '<title>' + escHtml(fullName) + '</title>';
     // Rectangle background
     svg += '<rect x="' + (ax - nodeW / 2) + '" y="' + (ay - accountNodeH / 2) + '" width="' + nodeW + '" height="' + accountNodeH + '" rx="10" ry="10" ' +
-      'fill="none" stroke="' + (isActive ? 'var(--primary)' : 'var(--foreground)') + '" stroke-width="2"/>';
+      'fill="none" stroke="' + (isActive ? '#22c55e' : 'var(--foreground)') + '" stroke-width="' + (isActive ? '2.5' : '2') + '"' +
+      (isActive ? ' filter="url(#activeGlow)"' : '') + '/>';
     // Avatar circle with initial
     // Name text — centered in node like SuperKiro
     svg += '<text x="' + ax + '" y="' + (ay + 4) + '" text-anchor="middle" fill="var(--foreground)" font-size="' + nodeFontSize + '" font-weight="500">' + escHtml(displayName) + '</text>';
     // Active indicator
     if (isActive) {
-      const activeDotX = ax + nodeW / 2 - 10;
-      svg += '<circle cx="' + activeDotX + '" cy="' + ay + '" r="4" fill="var(--success)">' +
-        '<animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/></circle>';
+      // Ping-style active indicator (two rings + dot) like 9router
+      const dotX = ax + nodeW / 2 - 10;
+      // Outer ping ring
+      svg += '<circle cx="' + dotX + '" cy="' + ay + '" r="6" fill="none" stroke="#22c55e" stroke-width="1.5" opacity="0.4">' +
+        '<animate attributeName="r" values="4;10;4" dur="1.5s" repeatCount="indefinite"/>' +
+        '<animate attributeName="opacity" values="0.6;0;0.6" dur="1.5s" repeatCount="indefinite"/>' +
+        '</circle>';
+      // Solid dot
+      svg += '<circle cx="' + dotX + '" cy="' + ay + '" r="4" fill="#22c55e">' +
+        '<animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/></circle>';
     }
     svg += '</g>';
   }
@@ -315,6 +435,22 @@ function renderTopology() {
 
   applyTopoTransform();
   bindTopoEvents(container);
+  
+  // Setup ResizeObserver for auto-fit (9router-style)
+  if (container._topoResizeObserver) container._topoResizeObserver.disconnect();
+  try {
+    container._topoResizeObserver = new ResizeObserver(function() {
+      requestAnimationFrame(function() {
+        // Re-center transform after resize
+        const newW = container.clientWidth || 600;
+        const newH = container.clientHeight || 340;
+        if (newW > 0 && newH > 0) {
+          applyTopoTransform();
+        }
+      });
+    });
+    container._topoResizeObserver.observe(container);
+  } catch(e) { /* ResizeObserver not supported */ }
 }
 function applyTopoTransform() {
   const g = document.getElementById('topo-transform');
@@ -1058,10 +1194,10 @@ function renderDetailDrawer() {
 // ─── Main Render ─────────────────────────────────────────
 function renderUsagePage() {
   if (usageState.activeTab === 'overview') {
-    renderOverviewCards();
-    renderTopology();
-    renderRecentRequests();
-    renderUsageTable();
+    try { renderOverviewCards(); } catch(e) { console.error('[Usage] overviewCards:', e); }
+    try { renderTopology(); } catch(e) { console.error('[Usage] topology:', e); }
+    try { renderRecentRequests(); } catch(e) { console.error('[Usage] recentRequests:', e); }
+    try { renderUsageTable(); } catch(e) { console.error('[Usage] usageTable:', e); }
   }
   // Chart is rendered separately via fetchUsageChart
 }
@@ -1078,6 +1214,11 @@ function initUsagePage() {
   topoDragState.dragging = false;
 
   renderUsageTabs();
+  // Ensure overview content is visible
+  const ovEl = document.getElementById('usageOverviewContent');
+  const dtEl = document.getElementById('usageDetailsContent');
+  if (ovEl) ovEl.classList.remove('hidden');
+  if (dtEl) dtEl.classList.add('hidden');
   renderPeriodSelector();
   fetchUsageStats(usageState.period);
   fetchUsageChart(usageState.period);
@@ -1087,6 +1228,9 @@ function initUsagePage() {
   usageState.refreshTimer = setInterval(() => {
     updateTimeAgoEls();
   }, 10000);
+  
+  // Reset topology first-seen tracking
+  topoFirstSeen = {};
 }
 
 function destroyUsagePage() {
@@ -1095,9 +1239,19 @@ function destroyUsagePage() {
     clearInterval(usageState.refreshTimer);
     usageState.refreshTimer = null;
   }
-  // Clean up topology document listeners
+  // Clean up topology resources
+  if (topoTickTimer) {
+    clearInterval(topoTickTimer);
+    topoTickTimer = null;
+  }
+  const container = document.getElementById('usageTopology');
+  if (container && container._topoResizeObserver) {
+    container._topoResizeObserver.disconnect();
+    container._topoResizeObserver = null;
+  }
   topoListenersRegistered = false;
   topoDragState.dragging = false;
+  topoFirstSeen = {};
 }
 
 // ─── Utility ─────────────────────────────────────────────
