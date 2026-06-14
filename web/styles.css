@@ -3599,3 +3599,715 @@ img.brand-icon {
   border-color: var(--accent-color) !important;
   background: var(--accent) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Usage Page Styles
+   ═══════════════════════════════════════════════════════════ */
+.usage-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+/* Period selector bar */
+.usage-period-bar {
+  display: flex;
+  justify-content: flex-end;
+}
+.usage-period-group {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--muted);
+}
+.usage-period-btn {
+  padding: 4px 12px;
+  border-radius: calc(var(--radius) - 2px);
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.usage-period-btn:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+.usage-period-btn.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* Overview cards */
+.usage-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+.overview-card {
+  padding: 0.75rem 1rem;
+}
+.overview-card-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin-bottom: 0.25rem;
+}
+.overview-card-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Topology + Recent grid */
+.usage-topology-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+@media (min-width: 768px) {
+  .usage-topology-grid {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+/* Cards */
+.usage-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* Topology card */
+.usage-topology-card {
+  min-height: 400px;
+  height: 480px;
+}
+@media (min-width: 640px) {
+  .usage-topology-card {
+    height: 560px;
+  }
+}
+.usage-topology-svg {
+  width: 100%;
+  height: 100%;
+}
+.usage-topo-edge.active {
+  stroke: var(--success) !important;
+  stroke-width: 2.5;
+  stroke-dasharray: 6 3;
+  animation: dashFlow 1s linear infinite;
+}
+@keyframes dashFlow {
+  to {
+    stroke-dashoffset: -9;
+  }
+}
+.usage-topo-center {
+  cursor: pointer;
+}
+.usage-topo-badge {
+  fill: white;
+  font-size: 10px;
+  font-weight: 700;
+}
+.usage-topo-label {
+  font-size: 10px;
+  fill: var(--foreground);
+}
+.usage-topo-node.active circle:first-child {
+  filter: drop-shadow(0 0 6px var(--primary));
+}
+
+/* Recent requests */
+.usage-recent-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 480px;
+}
+@media (min-width: 640px) {
+  .usage-recent-card {
+    max-height: 560px;
+  }
+}
+.usage-recent-header {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.usage-recent-table-wrap {
+  flex: 1;
+  overflow-y: auto;
+}
+.usage-recent-table {
+  width: 100%;
+  min-width: 280px;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.usage-recent-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  z-index: 1;
+}
+.usage-recent-table th {
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+}
+.usage-recent-table th:last-child,
+.usage-recent-table td:last-child {
+  text-align: right;
+}
+.usage-recent-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid rgba(128,128,128,0.1);
+}
+.usage-recent-table tbody tr:hover {
+  background: var(--accent);
+}
+.usage-recent-model {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+.usage-status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.usage-status-dot.success {
+  background: var(--success);
+}
+.usage-status-dot.error {
+  background: var(--destructive);
+}
+
+/* Chart */
+.usage-chart-card {
+  padding: 0.75rem;
+}
+.usage-chart-controls {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 0.5rem;
+}
+.usage-view-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--muted);
+}
+.usage-toggle-btn {
+  padding: 3px 10px;
+  border-radius: calc(var(--radius) - 3px);
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.usage-toggle-btn:hover {
+  color: var(--foreground);
+}
+.usage-toggle-btn.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.usage-chart-svg {
+  display: block;
+}
+
+/* Usage data table */
+.usage-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.usage-table-select {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+}
+.usage-table-select:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+}
+.usage-table-wrap {
+  overflow-x: auto;
+}
+.usage-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.usage-data-table th {
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
+}
+.usage-data-table th.sortable {
+  cursor: pointer;
+}
+.usage-data-table th.sortable:hover {
+  color: var(--foreground);
+}
+.sort-icon {
+  opacity: 0.5;
+  margin-left: 2px;
+}
+.usage-data-table td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.usage-data-table tbody tr:hover {
+  background: var(--accent);
+}
+.usage-summary-row {
+  background: var(--muted);
+  font-weight: 600;
+}
+.usage-summary-row td {
+  border-bottom: 2px solid var(--border);
+}
+.usage-row-key {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+
+/* Shared */
+.text-primary {
+  color: var(--primary);
+}
+.text-success {
+  color: var(--success);
+}
+.text-warning {
+  color: var(--warning);
+}
+.text-text-muted {
+  color: var(--muted-foreground);
+}
+.text-right {
+  text-align: right;
+}
+.whitespace-nowrap {
+  white-space: nowrap;
+}
+.usage-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+}
+.usage-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  height: 100%;
+}
+
+/* ─── Usage Tabs ───────────────────────────────────────── */
+.usage-tabs-bar {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--muted);
+  width: fit-content;
+}
+.usage-tab-btn {
+  padding: 6px 16px;
+  border-radius: calc(var(--radius) - 2px);
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.usage-tab-btn:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+.usage-tab-btn.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* ─── Topology Zoom Bar ────────────────────────────────── */
+.usage-topo-zoom-bar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--card);
+  z-index: 10;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.usage-topo-zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.usage-topo-zoom-btn:hover {
+  background: var(--accent);
+}
+.usage-topo-zoom-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  min-width: 32px;
+  text-align: center;
+}
+
+/* ─── Topology node updates ────────────────────────────── */
+.usage-topology-card {
+  position: relative;
+}
+.usage-topo-edge {
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.usage-topo-flow-dot {
+  filter: none;
+}
+.usage-topology-svg {
+  cursor: grab;
+}
+.usage-topology-svg:active {
+  cursor: grabbing;
+}
+.usage-topo-center-rect {
+  filter: drop-shadow(0 2px 8px rgba(99,102,241,0.3));
+}
+
+/* ─── Details Tab ──────────────────────────────────────── */
+.usage-details-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.usage-details-filter-select,
+.usage-details-filter-input {
+  padding: 0.4rem 0.7rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  outline: none;
+}
+.usage-details-filter-select:focus,
+.usage-details-filter-input:focus {
+  border-color: var(--ring);
+}
+.usage-details-filter-btn {
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.usage-details-filter-btn:hover {
+  opacity: 0.9;
+}
+.usage-details-table-wrap {
+  overflow-x: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 0.75rem;
+}
+.usage-details-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.usage-details-table th {
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+.usage-details-table td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.usage-details-table tbody tr:hover {
+  background: var(--accent);
+}
+.usage-details-model {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+.usage-details-view-btn {
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.usage-details-view-btn:hover {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+
+/* ─── Details Pagination ───────────────────────────────── */
+.usage-details-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.usage-page-btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.usage-page-btn:hover:not(:disabled) {
+  background: var(--accent);
+}
+.usage-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.usage-page-info {
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+}
+
+/* ─── Drawer ───────────────────────────────────────────── */
+.usage-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+}
+.usage-drawer {
+  width: 600px;
+  max-width: 100vw;
+  height: 100%;
+  background: var(--card);
+  overflow-y: auto;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.15);
+  display: flex;
+  flex-direction: column;
+}
+.usage-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.usage-drawer-header h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0;
+}
+.usage-drawer-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+.usage-drawer-close:hover {
+  color: var(--foreground);
+}
+.usage-drawer-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+  flex: 1;
+}
+.usage-drawer-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+.usage-drawer-section {
+  margin-bottom: 1.25rem;
+}
+.usage-drawer-section h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: var(--foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.usage-drawer-pre {
+  max-height: 300px;
+  max-width: 100%;
+  overflow: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--muted);
+  padding: 0.75rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ─── Text utilities for details ───────────────────────── */
+.text-error {
+  color: var(--destructive);
+}
+.font-medium {
+  font-weight: 500;
+}
+.font-mono {
+  font-family: var(--font-mono, monospace);
+}
+
+/* ─── Drawer collapsible sections ──────────────────────── */
+.usage-drawer-collapsible {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+.usage-drawer-collapsible-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.75rem;
+  background: var(--muted);
+  border: none;
+  cursor: pointer;
+  color: var(--foreground);
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.usage-drawer-collapsible-header:hover {
+  background: var(--accent);
+}
+.usage-drawer-collapsible-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.usage-drawer-collapsible-chevron {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  transition: transform 0.2s;
+}
+.usage-drawer-collapsible-body {
+  padding: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── Overview card subtitle ───────────────────────────── */
+.overview-card-sub {
+  font-size: 0.65rem;
+  color: var(--muted-foreground);
+  margin-top: 0.1rem;
+}

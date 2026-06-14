@@ -147,6 +147,7 @@ func (h *Handler) handleResponsesNonStream(
 		}
 		if err := h.ensureValidToken(account); err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			continue
@@ -174,9 +175,11 @@ func (h *Handler) handleResponsesNonStream(
 			},
 		}
 
+		h.usageTracker.TrackActive(account.ID, "openai-responses", model)
 		err := CallKiroAPI(account, payload, callback)
 		if err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			continue
@@ -194,7 +197,7 @@ func (h *Handler) handleResponsesNonStream(
 		}
 		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordUsage(apiKeyID, account.ID, model, "openai-responses", inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 
@@ -330,6 +333,7 @@ func (h *Handler) handleResponsesStream(
 		}
 		if err := h.ensureValidToken(account); err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			continue
@@ -476,10 +480,12 @@ func (h *Handler) handleResponsesStream(
 			},
 		}
 
+		h.usageTracker.TrackActive(account.ID, "openai-responses", model)
 		err := CallKiroAPI(account, payload, callback)
 		if err != nil {
 			if !responseStarted {
 				lastErr = err
+				h.usageTracker.RemoveActive(account.ID)
 				excluded[account.ID] = true
 				h.handleAccountFailure(account, err)
 				continue
@@ -539,7 +545,7 @@ func (h *Handler) handleResponsesStream(
 		}
 		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoning, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordUsage(apiKeyID, account.ID, model, "openai-responses", inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 

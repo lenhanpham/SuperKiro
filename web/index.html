@@ -110,6 +110,8 @@
                 data-i18n="tabs.api"></span></button>
             <button type="button" class="tab" data-tab="combos"><i class="fa-solid fa-layer-group tab-icon"></i><span
                 data-i18n="tabs.combos"></span></button>
+            <button type="button" class="tab" data-tab="usage"><i class="fa-solid fa-chart-line tab-icon"></i><span
+                data-i18n="tabs.usage"></span></button>
           </div>
         </nav>
         <div class="topbar-actions flex-wrap justify-end">
@@ -182,6 +184,55 @@
               </div>
             </div>
             <i class="fa-solid fa-circle-xmark stat-icon stat-icon--danger" aria-hidden="true"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Usage tab -->
+      <div id="tabUsage" class="tab-content hidden">
+        <div class="usage-page">
+          <!-- Tabs -->
+          <div id="usageTabs"></div>
+
+          <!-- Tab: Overview -->
+          <div id="usageOverviewContent">
+            <!-- Period selector -->
+            <div class="usage-period-bar" id="usagePeriodSelector"></div>
+
+            <!-- Overview cards -->
+            <div class="usage-overview-grid" id="usageOverviewCards">
+              <div class="usage-loading">Loading...</div>
+            </div>
+
+            <!-- Topology + Recent Requests -->
+            <div class="usage-topology-grid">
+              <div class="usage-card usage-topology-card" id="usageTopology">
+                <div class="usage-loading">Loading...</div>
+              </div>
+              <div class="usage-recent-card" id="usageRecentRequests">
+                <div class="usage-loading">Loading...</div>
+              </div>
+            </div>
+
+            <!-- Chart -->
+            <div class="usage-card usage-chart-card" id="usageChart">
+              <div class="usage-loading">Loading...</div>
+            </div>
+
+            <!-- Usage table -->
+            <div class="usage-card" id="usageTable">
+              <div class="usage-loading">Loading...</div>
+            </div>
+          </div>
+
+          <!-- Tab: Details -->
+          <div id="usageDetailsContent" class="hidden">
+            <div class="usage-loading">Loading...</div>
+          </div>
+
+          <!-- Request Details Drawer -->
+          <div id="detailsDrawerOverlay" class="usage-drawer-overlay hidden">
+            <div id="detailsDrawer" class="usage-drawer"></div>
           </div>
         </div>
       </div>
@@ -734,7 +785,7 @@
   <script>
     (function () {
       var v = window.__v || Date.now();
-      var scripts = ['/admin/toast.js', '/admin/app.js', '/admin/settings.js', '/admin/accounts.js', '/admin/combos.js', '/admin/apiCli.js'];
+      var scripts = ['/admin/toast.js', '/admin/app.js', '/admin/settings.js', '/admin/accounts.js', '/admin/combos.js', '/admin/apiCli.js', '/admin/usage.js'];
       scripts.forEach(function (src) {
         var el = document.createElement('script');
         el.src = src + '?v=' + v;

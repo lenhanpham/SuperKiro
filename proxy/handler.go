@@ -450,6 +450,7 @@ type Handler struct {
 	modelsCacheTime int64
 	promptCache     *promptCacheTracker
 	tokenRefreshMu  sync.Mutex
+	usageTracker    *UsageTracker
 }
 
 type thinkingStreamSource int
@@ -637,6 +638,7 @@ func NewHandler() *Handler {
 		stopRefresh:     make(chan struct{}),
 		stopStatsSaver:  make(chan struct{}),
 		promptCache:     newPromptCacheTracker(defaultPromptCacheTTL),
+		usageTracker:     GetUsageTracker(),
 	}
 	// Resolve web assets dir relative to the binary so the server works
 	// regardless of the current working directory.
@@ -1310,6 +1312,7 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, payload *KiroPayload
 		}
 		if err := h.ensureValidToken(account); err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			continue
@@ -1632,9 +1635,11 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, payload *KiroPayload
 			},
 		}
 
+		h.usageTracker.TrackActive(account.ID, "claude", model)
 		err := CallKiroAPI(account, payload, callback)
 		if err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			if !messageStarted {
@@ -1669,7 +1674,7 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, payload *KiroPayload
 		}
 		outputTokens = estimateClaudeOutputTokens(outputContent, thinkingOutput, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordUsage(apiKeyID, account.ID, model, "claude", inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 		h.promptCache.Update(account.ID, cacheProfile)
@@ -1776,6 +1781,54 @@ func (h *Handler) recordFailure() {
 	atomic.AddInt64(&h.failedRequests, 1)
 }
 
+// recordUsage records a successful request to the usage tracker.
+// Must be called after recordSuccessForApiKey with the same token/cost values.
+func (h *Handler) recordUsage(apiKeyID, accountID, model, endpoint string, inputTokens, outputTokens int, credits float64) {
+	if h.usageTracker == nil {
+		return
+	}
+	provider := "unknown"
+	if accountID != "" {
+		// Try to find provider from account info
+		for _, a := range config.GetAccounts() {
+			if a.ID == accountID {
+				if a.Provider != "" {
+					provider = a.Provider
+				}
+				break
+			}
+		}
+	}
+	accountName := ""
+	if accountID != "" {
+		for _, a := range config.GetAccounts() {
+			if a.ID == accountID {
+				if a.Nickname != "" {
+					accountName = a.Nickname
+				} else if a.Email != "" {
+					accountName = a.Email
+				} else {
+					accountName = accountID[:8]
+				}
+				break
+			}
+		}
+	}
+	rec := RequestRecord{
+		Model:        model,
+		Provider:     provider,
+		AccountID:    accountID,
+		AccountName:  accountName,
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		Cost:         credits,
+		Status:       "success",
+		Endpoint:     endpoint,
+		APIKeyID:     apiKeyID,
+	}
+	h.usageTracker.Append(rec)
+}
+
 // handleClaudeNonStream handles Claude non-streaming response
 func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, payload *KiroPayload, model string, thinking bool, thinkingOpts claudeThinkingResponseOptions, estimatedInputTokens int, cacheProfile *promptCacheProfile, apiKeyID string) {
 	excluded := make(map[string]bool)
@@ -1788,6 +1841,7 @@ func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, payload *KiroPayl
 		}
 		if err := h.ensureValidToken(account); err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			continue
@@ -1824,9 +1878,11 @@ func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, payload *KiroPayl
 			},
 		}
 
+		h.usageTracker.TrackActive(account.ID, "claude", model)
 		err := CallKiroAPI(account, payload, callback)
 		if err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			continue
@@ -1849,7 +1905,7 @@ func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, payload *KiroPayl
 		}
 		outputTokens = estimateClaudeOutputTokens(finalContent, rawThinkingContent, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordUsage(apiKeyID, account.ID, model, "claude", inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 		h.promptCache.Update(account.ID, cacheProfile)
@@ -1984,6 +2040,7 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, payload *KiroPayload
 		}
 		if err := h.ensureValidToken(account); err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			continue
@@ -2270,9 +2327,11 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, payload *KiroPayload
 			},
 		}
 
+		h.usageTracker.TrackActive(account.ID, "openai", model)
 		err := CallKiroAPI(account, payload, callback)
 			if err != nil {
 				lastErr = err
+				h.usageTracker.RemoveActive(account.ID)
 				excluded[account.ID] = true
 				h.handleAccountFailure(account, err)
 				if !responseStarted {
@@ -2315,7 +2374,7 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, payload *KiroPayload
 			outputTokens += estimateApproxTokens(tc.Function.Arguments)
 		}
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordUsage(apiKeyID, account.ID, model, "claude", inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 
@@ -2368,6 +2427,7 @@ func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, payload *KiroPayl
 		}
 		if err := h.ensureValidToken(account); err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			continue
@@ -2396,9 +2456,11 @@ func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, payload *KiroPayl
 			},
 		}
 
+		h.usageTracker.TrackActive(account.ID, "openai", model)
 		err := CallKiroAPI(account, payload, callback)
 		if err != nil {
 			lastErr = err
+			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
 			continue
@@ -2418,7 +2480,7 @@ func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, payload *KiroPayl
 		}
 		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordUsage(apiKeyID, account.ID, model, "claude", inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 
@@ -2668,6 +2730,16 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 		bw := &cliBackupWriter{ResponseWriter: w, backupFile: backupFile}
 		h.apiResetCliToolSettings(bw, r, toolID)
 
+	case path == "/usage/stats" && r.Method == "GET":
+		h.apiGetUsageStats(w, r)
+	case path == "/usage/chart" && r.Method == "GET":
+		h.apiGetUsageChart(w, r)
+	case path == "/usage/stream" && r.Method == "GET":
+		h.apiUsageStream(w, r)
+	case path == "/usage/request-details" && r.Method == "GET":
+		h.apiGetUsageRequestDetails(w, r)
+	case path == "/usage/providers" && r.Method == "GET":
+		h.apiGetUsageProviders(w, r)
 	default:
 		w.WriteHeader(404)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Not Found"})
@@ -5540,4 +5612,192 @@ func clampInt(v, min, max int) int {
 		return max
 	}
 	return v
+}
+
+// apiGetUsageStats returns full usage statistics for the usage page.
+func (h *Handler) apiGetUsageStats(w http.ResponseWriter, r *http.Request) {
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "24h"
+	}
+	stats := h.usageTracker.GetStats(period)
+	json.NewEncoder(w).Encode(stats)
+}
+
+// apiGetUsageChart returns time-bucketed chart data.
+func (h *Handler) apiGetUsageChart(w http.ResponseWriter, r *http.Request) {
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "7d"
+	}
+	data := h.usageTracker.GetChartData(period)
+	json.NewEncoder(w).Encode(data)
+}
+
+// apiUsageStream provides SSE streaming for real-time usage updates.
+func (h *Handler) apiUsageStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	listener := h.usageTracker.SubscribeSSE()
+	defer h.usageTracker.UnsubscribeSSE(listener)
+
+	// Send initial stats immediately
+	stats := h.usageTracker.GetStats("24h")
+	if data, err := json.Marshal(stats); err == nil {
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	notify := r.Context().Done()
+	keepalive := time.NewTicker(25 * time.Second)
+	defer keepalive.Stop()
+
+	for {
+		select {
+		case <-notify:
+			return
+		case <-keepalive.C:
+			fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
+		case data, ok := <-listener.ch:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+}
+
+// apiGetUsageRequestDetails returns paginated request details.
+func (h *Handler) apiGetUsageRequestDetails(w http.ResponseWriter, r *http.Request) {
+	page := 1
+	pageSize := 20
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := parseInt(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if ps := r.URL.Query().Get("pageSize"); ps != "" {
+		if v, err := parseInt(ps); err == nil && v > 0 && v <= 100 {
+			pageSize = v
+		}
+	}
+
+	stats := h.usageTracker.GetStats("all")
+	allRecs := stats.RecentRequests
+
+	// Apply filters
+	providerFilter := r.URL.Query().Get("provider")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
+
+	var filtered []RequestRecord
+	for _, rec := range allRecs {
+		if providerFilter != "" && rec.Provider != providerFilter {
+			continue
+		}
+		if startDate != "" && rec.Timestamp < startDate {
+			continue
+		}
+		if endDate != "" && rec.Timestamp > endDate+"T23:59:59Z" {
+			continue
+		}
+		filtered = append(filtered, rec)
+	}
+
+	totalItems := len(filtered)
+	totalPages := (totalItems + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	pageData := filtered[start:end]
+
+	// Convert to detail format
+	type DetailItem struct {
+		Timestamp  string `json:"timestamp"`
+		Model      string `json:"model"`
+		Provider   string `json:"provider"`
+		AccountID  string `json:"accountId"`
+		Status     string `json:"status"`
+		Tokens     map[string]int `json:"tokens"`
+		Latency    map[string]int `json:"latency"`
+	}
+	details := make([]DetailItem, 0, len(pageData))
+	for _, rec := range pageData {
+		details = append(details, DetailItem{
+			Timestamp: rec.Timestamp,
+			Model:     rec.Model,
+			Provider:  rec.Provider,
+			AccountID: rec.AccountID,
+			Status:    rec.Status,
+			Tokens: map[string]int{
+				"prompt_tokens":     rec.InputTokens,
+				"completion_tokens": rec.OutputTokens,
+			},
+			Latency: map[string]int{},
+		})
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"details":    details,
+		"pagination": map[string]int{"page": page, "pageSize": pageSize, "totalItems": totalItems, "totalPages": totalPages},
+	})
+}
+
+// apiGetUsageProviders returns list of unique providers from usage data.
+func (h *Handler) apiGetUsageProviders(w http.ResponseWriter, r *http.Request) {
+	stats := h.usageTracker.GetStats("all")
+
+	providerSet := make(map[string]bool)
+	for _, rec := range stats.RecentRequests {
+		if rec.Provider != "" {
+			providerSet[rec.Provider] = true
+		}
+	}
+
+	type ProviderInfo struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	providers := make([]ProviderInfo, 0, len(providerSet))
+	for p := range providerSet {
+		providers = append(providers, ProviderInfo{ID: p, Name: p})
+	}
+	// Sort
+	for i := 0; i < len(providers); i++ {
+		for j := i + 1; j < len(providers); j++ {
+			if providers[i].Name > providers[j].Name {
+				providers[i], providers[j] = providers[j], providers[i]
+			}
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"providers": providers,
+	})
+}
+
+func parseInt(s string) (int, error) {
+	var v int
+	_, err := fmt.Sscanf(s, "%d", &v)
+	return v, err
 }

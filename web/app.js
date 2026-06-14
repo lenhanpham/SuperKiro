@@ -624,6 +624,7 @@ let customSelectRefreshQueued = false;
         const remember = $('rememberPwd');
         setActivePassword(password, !!(remember && remember.checked));
         showMain(); loadData();
+        setTimeout(function() { switchTab('usage'); }, 100);
       } else {
         toast(t('login.error'), 'error');
       }
@@ -794,6 +795,8 @@ let customSelectRefreshQueued = false;
     qsa('.tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
     qsa('.tab-content').forEach(c => c.classList.add('hidden'));
     $('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');
+    if (tab === 'usage') { if (typeof initUsagePage === 'function') initUsagePage(); }
+    else { if (typeof destroyUsagePage === 'function') destroyUsagePage(); }
     if (tab === 'combos') { loadCombos(); }
     if (tab === 'api') { renderCliTools(); if (apiKeysCache.length === 0) loadApiKeys(); loadCliToolStatus(); }
   }
@@ -851,6 +854,14 @@ let customSelectRefreshQueued = false;
     $('loginThemeToggle').addEventListener('click', toggleTheme);
     $('mainThemeToggle').addEventListener('click', toggleTheme);
     $('logoutBtn').addEventListener('click', logout);
+    var brandWrap = $('brandWrap');
+    if (brandWrap) brandWrap.addEventListener('click', function() { switchTab('usage'); });
+    // Also watch for clicks on brand inside brandWrap (favicon + text)
+    document.querySelectorAll('.brand').forEach(function(el) {
+      if (!el.closest('#brandWrap')) {
+        el.addEventListener('click', function() { switchTab('usage'); });
+      }
+    });
 
     qsa('#tabBar .tab').forEach(tab => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
 
