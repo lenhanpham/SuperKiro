@@ -662,5 +662,10 @@
   "usage.status.ok": "ok",
   "usage.status.pending": "pending",
   "usage.status.unknown": "unknown",
-  "usage.status.failed": "failed"
+  "usage.status.failed": "failed",
+  "usage.noDetailsFound": "No request details found.",
+  "usage.prev": "← Prev",
+  "usage.next": "Next →",
+  "usage.pageOf": "Page {0} of {1}",
+  "usage.drawer.account": "Account:"
 }

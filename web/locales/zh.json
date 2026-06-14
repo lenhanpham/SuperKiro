@@ -662,5 +662,10 @@
   "usage.status.ok": "正常",
   "usage.status.pending": "等待中",
   "usage.status.unknown": "未知",
-  "usage.status.failed": "失败"
+  "usage.status.failed": "失败",
+  "usage.noDetailsFound": "未找到请求详情。",
+  "usage.prev": "← 上一页",
+  "usage.next": "下一页 →",
+  "usage.pageOf": "第 {0} 页，共 {1} 页",
+  "usage.drawer.account": "账号："
 }

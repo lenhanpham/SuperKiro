@@ -663,5 +663,10 @@
   "usage.status.ok": "bình thường",
   "usage.status.pending": "đang chờ",
   "usage.status.unknown": "không rõ",
-  "usage.status.failed": "thất bại"
+  "usage.status.failed": "thất bại",
+  "usage.noDetailsFound": "Không tìm thấy chi tiết yêu cầu.",
+  "usage.prev": "← Trước",
+  "usage.next": "Tiếp →",
+  "usage.pageOf": "Trang {0} của {1}",
+  "usage.drawer.account": "Tài khoản:"
 }

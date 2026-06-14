@@ -1044,7 +1044,7 @@ function renderRequestDetailsTable() {
   if (detailsLoading) {
     html += '<div class="usage-loading">Loading...</div>';
   } else if (detailsData.length === 0) {
-    html += '<div class="usage-empty-state">No request details found.</div>';
+    html += '<div class="usage-empty-state">' + (typeof t === 'function' ? t('usage.noDetailsFound') : 'No request details found.') + '</div>';
   } else {
     html += '<div class="usage-details-table-wrap"><table class="usage-details-table">' +
       '<thead><tr>' +
@@ -1072,9 +1072,9 @@ function renderRequestDetailsTable() {
     // Pagination
     if (detailsPagination.totalPages > 1) {
       html += '<div class="usage-details-pagination">' +
-        '<button class="usage-page-btn" data-page="prev"' + (detailsPagination.page <= 1 ? ' disabled' : '') + '>← Prev</button>' +
-        '<span class="usage-page-info">Page ' + detailsPagination.page + ' of ' + detailsPagination.totalPages + '</span>' +
-        '<button class="usage-page-btn" data-page="next"' + (detailsPagination.page >= detailsPagination.totalPages ? ' disabled' : '') + '>Next →</button>' +
+        '<button class="usage-page-btn" data-page="prev"' + (detailsPagination.page <= 1 ? ' disabled' : '') + '>' + (typeof t === 'function' ? t('usage.prev') : '← Prev') + '</button>' +
+        '<span class="usage-page-info">' + (typeof t === 'function' ? t('usage.pageOf', detailsPagination.page, detailsPagination.totalPages) : 'Page ' + detailsPagination.page + ' of ' + detailsPagination.totalPages) + '</span>' +
+        '<button class="usage-page-btn" data-page="next"' + (detailsPagination.page >= detailsPagination.totalPages ? ' disabled' : '') + '>' + (typeof t === 'function' ? t('usage.next') : 'Next →') + '</button>' +
         '</div>';
     }
   }
@@ -1159,7 +1159,7 @@ function renderDetailDrawer() {
     '<div class="usage-drawer-body">' +
     '<div class="usage-drawer-info-grid">' +
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.timestamp') : 'Timestamp:') + '</span> <span>' + new Date(d.timestamp).toLocaleString() + '</span></div>' +
-    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.provider') : 'Provider:') + '</span> <span class="font-medium">' + escHtml(getProviderDisplayName(d.provider) || '-') + '</span></div>' +
+    '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.account') : 'Account:') + '</span> <span class="font-medium">' + escHtml((function() { var nameMap = (usageState.stats || {}).accountNames || {}; var name = nameMap[d.accountId] || d.accountId || '-'; return name.length > 6 ? name.substring(0, 6) + '\u2026' : name; })()) + '</span></div>' +
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.model') : 'Model:') + '</span> <span class="font-mono">' + escHtml(d.model || '-') + '</span></div>' +
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.status') : 'Status:') + '</span> <span class="' + (d.status === 'success' ? 'text-success' : 'text-error') + '">' + escHtml(translateStatus(d.status)) + '</span></div>' +
     '<div><span class="text-text-muted">' + (typeof t === 'function' ? t('usage.drawer.latency') : 'Latency:') + '</span> <span class="font-mono">' + (typeof t === 'function' ? t('usage.drawer.ttft') : 'TTFT') + ' ' + (d.latency?.ttft || 0) + 'ms / Total ' + (d.latency?.total || 0) + 'ms</span></div>' +
@@ -1188,7 +1188,15 @@ function renderDetailDrawer() {
 
   drawer.innerHTML += '</div>';
 
-  // Close button already has onclick from inline HTML
+  // Wire up close button
+  var closeBtn = document.getElementById('detailsDrawerClose');
+  if (closeBtn) {
+    closeBtn.onclick = function() {
+      usageState.isDrawerOpen = false;
+      usageState.selectedDetail = null;
+      overlay.classList.add('hidden');
+    };
+  }
 }
 
 // ─── Main Render ─────────────────────────────────────────
