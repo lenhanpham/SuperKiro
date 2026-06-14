@@ -115,7 +115,7 @@ func spawnBackground(pidPath string) {
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	setDetached(cmd)
 	if err := cmd.Start(); err != nil {
 		fmt.Printf("\n  Failed to start background process: %v\n", err)
 		pause("\n  Press Enter to return to menu...")
