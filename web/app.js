@@ -639,7 +639,7 @@ let customSelectRefreshQueued = false;
         const remember = $('rememberPwd');
         setActivePassword(password, !!(remember && remember.checked));
         showMain(); loadData();
-        setTimeout(function() { switchTab('usage'); }, 100);
+        setTimeout(function() { switchTab('accounts'); }, 100);
       } else {
         toast(t('login.error'), 'error');
       }
@@ -871,11 +871,11 @@ let customSelectRefreshQueued = false;
     $('mainThemeToggle').addEventListener('click', toggleTheme);
     $('logoutBtn').addEventListener('click', logout);
     var brandWrap = $('brandWrap');
-    if (brandWrap) brandWrap.addEventListener('click', function() { switchTab('usage'); });
+    if (brandWrap) brandWrap.addEventListener('click', function() { switchTab('accounts'); });
     // Also watch for clicks on brand inside brandWrap (favicon + text)
     document.querySelectorAll('.brand').forEach(function(el) {
       if (!el.closest('#brandWrap')) {
-        el.addEventListener('click', function() { switchTab('usage'); });
+        el.addEventListener('click', function() { switchTab('accounts'); });
       }
     });
 

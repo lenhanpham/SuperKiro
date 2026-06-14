@@ -1084,7 +1084,7 @@ label:has(> .switch) > span {
   color: var(--foreground);
   text-decoration: none;
   font-feature-settings: "cv11", "ss01";
-  cursor: default;
+  cursor: pointer;
 }
 .brand:hover {
   color: var(--foreground);
@@ -1124,6 +1124,7 @@ img.brand-icon {
   align-items: center;
   gap: 0.625rem;
   min-width: 0;
+  cursor: pointer;
 }
 .brand-status {
   display: inline-flex;
@@ -2989,7 +2990,7 @@ img.brand-icon {
   z-index: 2;
   background: var(--primary);
   color: var(--primary-foreground);
-  border-color: var(--foreground);
+  border-color: var(--primary);
 }
 .lang-btn.active:hover {
   background: var(--primary);
