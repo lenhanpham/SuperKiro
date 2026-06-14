@@ -1209,7 +1209,7 @@
   function renderAntigravityConfig() {
     var prefix = 'antigravity';
     var state = window.__antigravityState || { models: {} };
-    var aliasKeys = ['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','gemini-2.0-flash-lite','gemini-1.5-flash','gemini-1.5-pro','gemini-2.5-flash-preview','gemini-2.5-pro-preview','gemini-2.0-flash-preview'];
+    var aliasKeys = ['gemini-3-flash-agent','gemini-3.5-flash-low','gemini-3.5-flash-extra-low','gemini-pro-agent','gemini-3.1-pro-low','claude-opus-4-6-thinking','claude-sonnet-4-6','gpt-oss-120b-medium'];
     var html = '<div style="padding:1rem;border-top:1px solid var(--border);">';
     html += '<div class="form-group"><label data-i18n="cliTools.apiKey">API Key</label>' +
       '<select id="antigravity_ak" class="form-control" data-native-select="true">' +
