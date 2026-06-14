@@ -37,8 +37,9 @@
         '<span style="font-weight:600;font-size:1rem;">' + escapeHtml(combo.name) + '</span>' +
         '<span style="margin-left:0.5rem;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.75rem;background:var(--badge-bg,#e8f4fd);color:var(--badge-color,#1a73e8);">' + escapeHtml(strategy) + '</span>' +
         '</div>' +
-        '<div style="display:flex;gap:0.4rem;">' +
+        '<div style="display:flex;gap:0.4rem;align-items:center;">' +
         '<button class="btn btn-small" onclick="editCombo(\'' + escapeHtml(combo.id).replace(/'/g, '&#39;') + '\')" data-i18n="combos.actionEdit"></button>' +
+        '<button class="btn btn-small" onclick="toggleComboStrategy(\'' + escapeHtml(combo.id).replace(/'/g, '&#39;') + '\')" title="' + escapeHtml(strategy === 'round-robin' ? (typeof t === 'function' ? t('combos.switchToFallback') : 'Switch to Fallback') : (typeof t === 'function' ? t('combos.switchToRoundRobin') : 'Switch to Round Robin')) + '" style="font-size:0.7rem;padding:0.25rem 0.5rem;background:' + (strategy === 'round-robin' ? '#7c3aed' : '#6366f1') + ';color:#fff;border:none;border-radius:9999px;cursor:pointer;font-weight:600;">' + escapeHtml(strategy === 'round-robin' ? 'RR' : 'FB') + '</button>' +
         '<button class="btn btn-small btn-danger" onclick="deleteCombo(\'' + escapeHtml(combo.id).replace(/'/g, '&#39;') + '\',\'' + escapeHtml(combo.name).replace(/'/g, '&#39;') + '\')" data-i18n="combos.delete"></button>' +
         '</div>' +
         '</div>' +
@@ -334,7 +335,27 @@ function renderModelItem(modelId) {
     }
   }
 
+
+  async function toggleComboStrategy(comboId) {
+    var combo = combosData.find(function(c) { return c.id === comboId; });
+    if (!combo) return;
+    var newStrategy = combo.strategy === 'round-robin' ? 'fallback' : 'round-robin';
+    try {
+      var res = await api('/combos/' + encodeURIComponent(comboId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy: newStrategy })
+      });
+      var d = await res.json().catch(function() { return {}; });
+      if (!res.ok) throw new Error(d.error || t('common.failed'));
+      toast(t('combos.strategyUpdated'), 'success');
+      await loadCombos();
+    } catch (e) {
+      toast((e && e.message) || t('common.failed'), 'error');
+    }
+  }
   // Expose combo functions to global scope for inline onclick
+  window.toggleComboStrategy = toggleComboStrategy;
   window.editCombo = editCombo;
   window.deleteCombo = deleteCombo;
   window.removeComboModelRow = removeComboModelRow;

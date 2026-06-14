@@ -667,5 +667,8 @@
   "usage.prev": "← Prev",
   "usage.next": "Next →",
   "usage.pageOf": "Page {0} of {1}",
-  "usage.drawer.account": "Account:"
+  "usage.drawer.account": "Account:",
+  "combos.switchToFallback": "Switch to Fallback",
+  "combos.switchToRoundRobin": "Switch to Round Robin",
+  "combos.strategyUpdated": "Strategy updated"
 }
