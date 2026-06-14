@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -5604,7 +5603,7 @@ func (h *Handler) apiShutdown(w http.ResponseWriter, r *http.Request) {
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
-	syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+	selfSignalInterrupt()
 }
 
 func clampInt(v, min, max int) int {
