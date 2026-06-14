@@ -3595,6 +3595,26 @@ img.brand-icon {
   line-height: 1;
   flex-shrink: 0;
 }
+.combo-model-test-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  border-radius: 3px;
+  opacity: 0.5;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+.combo-model-row:hover .combo-model-test-btn {
+  opacity: 1;
+}
+.combo-model-test-btn:hover {
+  color: var(--accent-color);
+  background: var(--accent);
+}
+
 .combo-model-dragging {
   opacity: 0.4;
 }

@@ -78,13 +78,48 @@
         'ondrop="onComboRowDrop(event)" ' +
         'class="combo-model-row">' +
         '<span class="combo-model-grip">&#9776;</span>' +
+        comboRowTestIcon(m) +
         '<span class="combo-model-name">' + escapeHtml(m) + '</span>' +
+        '<button type="button" class="combo-model-test-btn" onclick="event.stopPropagation();window.testComboModel(\'' + escapeHtml(m).replace(/'/g, '&#39;') + '\')" title="' + escapeHtml(t('cliTools.testModel')) + '"><i class="fa-solid fa-flask"></i></button>' +
         '<button type="button" class="combo-model-remove" onclick="removeComboModelRow(' + i + ')" title="' + escapeHtml(t('common.remove')) + '">&times;</button>' +
         '</div>'
       ).join('') +
       '</div>' +
       '<button type="button" class="btn btn-small" onclick="openModelPicker()" style="margin-top:0.4rem;">' + escapeHtml(t('combos.addModel')) + '</button>';
   }
+
+  function comboRowTestIcon(modelId) {
+    const testRes = window.modelTestResults ? window.modelTestResults[modelId] : undefined;
+    const testing = window.modelTesting ? window.modelTesting[modelId] : false;
+    if (testing) {
+      return '<span class="combo-model-test-icon" style="flex-shrink:0;width:1.1em;text-align:center;"><i class="fa-solid fa-spinner fa-spin" style="color:var(--text-secondary);font-size:0.7rem;"></i></span>';
+    }
+    if (testRes === 'ok') {
+      return '<span class="combo-model-test-icon" style="flex-shrink:0;width:1.1em;text-align:center;"><i class="fa-solid fa-check-circle" style="color:#22c55e;font-size:0.7rem;"></i></span>';
+    }
+    if (testRes === 'error') {
+      return '<span class="combo-model-test-icon" style="flex-shrink:0;width:1.1em;text-align:center;"><i class="fa-solid fa-times-circle" style="color:#ef4444;font-size:0.7rem;"></i></span>';
+    }
+    return '';
+  }
+
+  window.testComboModel = async function (modelId) {
+    if (window.modelTesting[modelId]) return;
+    window.modelTesting[modelId] = true;
+    renderComboModelRows();
+    try {
+      const res = await api('/cli-tools/test-model', {
+        method: 'POST',
+        body: JSON.stringify({ model: modelId })
+      });
+      const data = await res.json();
+      window.modelTestResults[modelId] = data.ok ? 'ok' : 'error';
+    } catch (e) {
+      window.modelTestResults[modelId] = 'error';
+    }
+    delete window.modelTesting[modelId];
+    renderComboModelRows();
+  };
 
   function removeComboModelRow(idx) {
     comboModelRows.splice(idx, 1);
