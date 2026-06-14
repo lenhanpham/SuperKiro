@@ -1547,10 +1547,6 @@
         '</div>' +
         '<span class="cli-tool-status ' + statusClass + '">' + statusLabel + '</span>';
       card.addEventListener('click', function () {
-        if (getCliToolStatus(meta.id) === 'not_installed') {
-          toast(t('cliTools.notInstalled') + ': ' + t(meta.nameKey), 'info');
-          return;
-        }
         cliToolDetailId = meta.id;
         renderCliTools();
       });
