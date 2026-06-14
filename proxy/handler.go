@@ -834,7 +834,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleHealth health check（不暴露统计数据）
+// handleHealth health check (does not expose statistics)
 func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1002,7 +1002,7 @@ func (h *Handler) refreshModelsCache() {
 			h.handleAccountFailure(account, err)
 			continue
 		}
-		// 缓存每账号可用模型，用于routing时过滤
+		// Cache available models per account, used for filtering during routing
 		modelIDs := make([]string, 0, len(models))
 		for _, m := range models {
 			modelIDs = append(modelIDs, m.ModelId)
@@ -1020,8 +1020,8 @@ func (h *Handler) refreshModelsCache() {
 	}
 }
 
-// fetchAndCacheAccountModels 为单个账号拉取并写入model cache。
-// 同时更新 pool 的routing缓存与全局聚合模型列表。
+// fetchAndCacheAccountModels fetches and writes model cache for a single account.
+// Also updates the pool routing cache and global aggregated model list.
 func (h *Handler) fetchAndCacheAccountModels(account *config.Account) error {
 	if err := h.ensureValidToken(account); err != nil {
 		return fmt.Errorf("token refresh failed: %w", err)
@@ -1047,7 +1047,7 @@ func (h *Handler) fetchAndCacheAccountModels(account *config.Account) error {
 }
 
 // apiRefreshAccountModels POST /admin/api/accounts/{id}/models/refresh
-// 立即为指定账号拉取并更新模型routing缓存。
+// Immediately fetches and updates the model routing cache for a specific account.
 func (h *Handler) apiRefreshAccountModels(w http.ResponseWriter, r *http.Request, id string) {
 	accounts := config.GetAccounts()
 	var account *config.Account
@@ -1081,7 +1081,7 @@ func (h *Handler) apiRefreshAccountModels(w http.ResponseWriter, r *http.Request
 }
 
 // apiRefreshAllAccountsModels POST /admin/api/accounts/models/refresh
-// 直接复用 refreshModelsCache，为所有已启用账号刷新模型routing缓存。
+// Reuses refreshModelsCache to refresh model routing cache for all enabled accounts.
 func (h *Handler) apiRefreshAllAccountsModels(w http.ResponseWriter, r *http.Request) {
 	h.refreshModelsCache()
 	h.modelsCacheMu.RLock()
@@ -4317,7 +4317,7 @@ func (h *Handler) apiUpdateAccount(w http.ResponseWriter, r *http.Request, id st
 }
 
 // apiGetAccountOverage fetches and returns upstream Overages status for a single account.
-// 同步把结果写回 config.json 缓存，确保 UI 与persist一致。
+// Synchronously writes the result back to config.json cache, ensuring UI and persistence are consistent.
 func (h *Handler) apiGetAccountOverage(w http.ResponseWriter, r *http.Request, id string) {
 	accounts := config.GetAccounts()
 	var account *config.Account
@@ -4447,7 +4447,7 @@ func (h *Handler) apiBatchAccounts(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		h.pool.Reload()
-		// 为本次新启用的账号异步拉取model cache
+		// Asynchronously fetches model cache for newly enabled accounts
 		for _, acc := range toRefreshModels {
 			go func(a config.Account) {
 				a.Enabled = true
@@ -4651,7 +4651,7 @@ func (h *Handler) apiPollBuilderIdAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 授权完成，get user info
+	// Authorization complete, get user info
 	email, _, _ := auth.GetUserInfo(accessToken)
 
 	// create account
@@ -5066,7 +5066,7 @@ func (h *Handler) apiTestAccount(w http.ResponseWriter, r *http.Request, id stri
 	})
 }
 
-// apiRefreshAccount refresh account info（使用量、订阅等）
+// apiRefreshAccount refreshes account info (usage, subscription, etc.)
 func (h *Handler) apiRefreshAccount(w http.ResponseWriter, r *http.Request, id string) {
 	accounts := config.GetAccounts()
 	var account *config.Account
@@ -5083,7 +5083,7 @@ func (h *Handler) apiRefreshAccount(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 
-	// 先尝试refresh token（不管是否过期，确保 token 有效）
+	// First try to refresh the token (regardless of expiry, to ensure token is valid)
 	refreshTokenIfNeeded := func() error {
 		if account.RefreshToken == "" {
 			return nil
@@ -5135,7 +5135,7 @@ func (h *Handler) apiRefreshAccount(w http.ResponseWriter, r *http.Request, id s
 				// retry
 				info, err = RefreshAccountInfo(account)
 				if err != nil {
-					// retry后仍然失败，检查是否为封禁状态
+					// Still failed after retry, check if account is banned
 					if strings.Contains(err.Error(), "TEMPORARILY_SUSPENDED") || strings.Contains(err.Error(), "Account suspended") {
 						json.NewEncoder(w).Encode(map[string]interface{}{
 							"success": true,
@@ -5271,7 +5271,7 @@ func (h *Handler) apiGetAccountModels(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	// 同步更新routing缓存
+	// Synchronously update routing cache
 	modelIDs := make([]string, 0, len(models))
 	for _, m := range models {
 		modelIDs = append(modelIDs, m.ModelId)

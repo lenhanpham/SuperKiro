@@ -246,7 +246,7 @@ func setKiroHeaders(req *http.Request, account *config.Account) {
 	applyKiroBaseHeaders(req, account, headerValues)
 }
 
-// RefreshAccountInfo refresh account info（使用量、订阅等）
+// RefreshAccountInfo refreshes account info (usage, subscription, etc.)
 func RefreshAccountInfo(account *config.Account) (*config.AccountInfo, error) {
 	info := &config.AccountInfo{
 		LastRefresh: time.Now().Unix(),
