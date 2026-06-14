@@ -28,6 +28,13 @@
   <p>If this project helps you, a Star would mean a lot.</p>
 </div>
 
+<p align="center">
+  <a href="https://github.com/lenhanpham/SuperKiro">
+    <picture>
+      <img src="resources/webui.jpg" alt="SuperKiro" style="width: 75%;">
+    </picture>
+  </a>
+</p>
 
 ## Features
 

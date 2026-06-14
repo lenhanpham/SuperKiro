@@ -29,6 +29,14 @@
 </div>
 
 
+<p align="center">
+  <a href="https://github.com/lenhanpham/SuperKiro">
+    <picture>
+      <img src="resources/webui.jpg" alt="SuperKiro" style="width: 75%;">
+    </picture>
+  </a>
+</p>
+
 ## 功能特性
 
 - Anthropic `/v1/messages`、OpenAI `/v1/chat/completions` 与 `/v1/responses`

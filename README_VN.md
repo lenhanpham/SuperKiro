@@ -29,6 +29,14 @@
 </div>
 
 
+<p align="center">
+  <a href="https://github.com/lenhanpham/SuperKiro">
+    <picture>
+      <img src="resources/webui.jpg" alt="SuperKiro" style="width: 75%;">
+    </picture>
+  </a>
+</p>
+
 ## Tính năng
 
 - Anthropic `/v1/messages`, OpenAI `/v1/chat/completions` & `/v1/responses`
