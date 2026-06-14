@@ -1225,6 +1225,9 @@ function initUsagePage() {
   usageState.sortBy = { model: 'requests', account: 'requests', apiKey: 'requests', endpoint: 'requests' };
   usageState.sortOrder = { model: 'desc', account: 'desc', apiKey: 'desc', endpoint: 'desc' };
 
+  // Reset to overview sub-tab
+  usageState.activeTab = 'overview';
+
   // Reset zoom and drag state
   topoZoom = 1;
   topoPanX = 0;

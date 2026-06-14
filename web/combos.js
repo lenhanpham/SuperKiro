@@ -11,6 +11,7 @@
     if (!list) return;
     try {
       const res = await api('/combos');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       const d = await res.json();
       combosData = Array.isArray(d.combos) ? d.combos : [];
       renderCombos();
@@ -28,7 +29,7 @@
       return;
     }
     list.innerHTML = combosData.map(combo => {
-      const chain = Array.isArray(combo.models) ? combo.models.join(' → ') : '';
+      const models = Array.isArray(combo.models) ? combo.models : [];
       const strategy = combo.strategy || 'fallback';
       return '<div class="api-key-entry" style="margin-bottom:0.5rem;padding:0.75rem;border:1px solid var(--border);border-radius:6px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;">' +
@@ -41,7 +42,9 @@
         '<button class="btn btn-small btn-danger" onclick="deleteCombo(\'' + escapeHtml(combo.id).replace(/'/g, '&#39;') + '\',\'' + escapeHtml(combo.name).replace(/'/g, '&#39;') + '\')" data-i18n="combos.delete"></button>' +
         '</div>' +
         '</div>' +
-        '<div style="margin-top:0.4rem;font-size:0.85rem;color:var(--muted-foreground,#888);word-break:break-all;">' + escapeHtml(chain) + '</div>' +
+        '<div style="margin-top:0.5rem;display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem;">' +
+        models.map(function(m, i) { var c = ['#6366f1', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#2563eb', '#16a34a', '#ea580c', '#9333ea'][i % 10]; return '<span style="display:inline-flex;align-items:center;padding:0.2rem 0.6rem;border-radius:9999px;font-size:0.75rem;font-weight:600;background:' + c + ';color:#fff;border:1px solid ' + c + ';">' + escapeHtml(m) + '</span>' + (i < models.length - 1 ? '<span style="color:var(--muted-foreground,#666);font-size:0.9rem;font-weight:700;">\u2192</span>' : ''); }).join('') +
+        '</div>' +
         '</div>';
     }).join('');
     applyTranslations();
