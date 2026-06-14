@@ -10,7 +10,7 @@
   --card-foreground: #000000;
   --popover: #fcfcfc;
   --popover-foreground: #000000;
-  --primary: #000000;
+  --primary: #2563eb;
   --primary-foreground: #ffffff;
   --secondary: #ebebeb;
   --secondary-foreground: #000000;
@@ -67,8 +67,8 @@
   --card-foreground: #ffffff;
   --popover: #121212;
   --popover-foreground: #ffffff;
-  --primary: #ffffff;
-  --primary-foreground: #000000;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
   --secondary: #222222;
   --secondary-foreground: #ffffff;
   --muted: #1d1d1d;
@@ -2987,13 +2987,13 @@ img.brand-icon {
 }
 .lang-btn.active {
   z-index: 2;
-  background: var(--foreground);
-  color: var(--background);
+  background: var(--primary);
+  color: var(--primary-foreground);
   border-color: var(--foreground);
 }
 .lang-btn.active:hover {
-  background: var(--foreground);
-  color: var(--background);
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .theme-toggle .theme-ico-system,
