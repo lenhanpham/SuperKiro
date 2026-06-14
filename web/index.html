@@ -734,13 +734,12 @@
   <script>
     (function () {
       var v = window.__v || Date.now();
-      var t = document.createElement('script');
-      t.src = '/admin/toast.js?v=' + v;
-      document.body.appendChild(t);
-      var s = document.createElement('script');
-      s.src = '/admin/app.js?v=' + v;
-      s.defer = true;
-      document.body.appendChild(s);
+      var scripts = ['/admin/toast.js', '/admin/app.js', '/admin/settings.js', '/admin/accounts.js', '/admin/combos.js', '/admin/apiCli.js'];
+      scripts.forEach(function (src) {
+        var el = document.createElement('script');
+        el.src = src + '?v=' + v;
+        document.body.appendChild(el);
+      });
     })();
   </script>
 </body>
