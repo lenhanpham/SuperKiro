@@ -7,7 +7,11 @@ import (
 	"time"
 )
 
-const maxAccountRetryAttempts = 3
+// maxAccountRetryAttempts is no longer a fixed cap — the retry loops in handler.go
+// now iterate until all accounts are exhausted (GetNextForModelExcluding returns nil).
+// The constant is kept as a safety floor in case of refactoring gaps; actual iteration
+// is unbounded, bounded only by the pool's available unique accounts.
+const maxAccountRetryAttempts = 128
 
 func isQuotaErrorMessage(msg string) bool {
 	msg = strings.ToLower(msg)
@@ -33,16 +37,42 @@ func isProfileUnavailableErrorMessage(msg string) bool {
 
 func isAuthErrorMessage(msg string) bool {
 	msg = strings.ToLower(msg)
-	return strings.Contains(msg, "http 401") ||
-		strings.Contains(msg, "http 403") ||
-		strings.Contains(msg, "unauthorized") ||
+	// Match standalone status codes (no adjacent digits) — catches "401" from
+	// "refresh failed: 401 ..." and "HTTP 403 from ..." alike.
+	if hasStatusToken(msg, "401") || hasStatusToken(msg, "403") {
+		return true
+	}
+	return strings.Contains(msg, "unauthorized") ||
 		strings.Contains(msg, "forbidden") ||
 		strings.Contains(msg, "authentication failed") ||
+		strings.Contains(msg, "bad credentials") ||
 		strings.Contains(msg, "token invalid") ||
 		strings.Contains(msg, "token expired") ||
 		strings.Contains(msg, "invalid_grant") ||
 		strings.Contains(msg, "access token expired") ||
 		strings.Contains(msg, "refresh token expired")
+}
+
+// hasStatusToken returns true when status appears in s with non-digit boundaries
+// on both sides, so "401" matches "refresh failed: 401 ..." but not "request_401abc".
+func hasStatusToken(s, status string) bool {
+	for {
+		idx := strings.Index(s, status)
+		if idx < 0 {
+			return false
+		}
+		leftOK := idx == 0 || !isDigit(s[idx-1])
+		rightIdx := idx + len(status)
+		rightOK := rightIdx >= len(s) || !isDigit(s[rightIdx])
+		if leftOK && rightOK {
+			return true
+		}
+		s = s[idx+len(status):]
+	}
+}
+
+func isDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
 
 func (h *Handler) disableAccount(account *config.Account, banStatus, banReason string) {
