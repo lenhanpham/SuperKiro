@@ -190,8 +190,6 @@ func MergeCodexConfig(homeDir, model, baseURL, subagent string) error {
 	// Process lines
 	var output []string
 	currentSection := ""
-	inSuperKiro := false
-	inSubagent := false
 	skipUntilNextSection := false
 	
 	modelInjected := false
@@ -204,8 +202,6 @@ func MergeCodexConfig(homeDir, model, baseURL, subagent string) error {
 			currentSection = cl.Key
 			
 			if cl.Key == "model_providers.superkiro" {
-				inSuperKiro = true
-				inSubagent = false
 				skipUntilNextSection = false
 				
 				// Inject SuperKiro section
@@ -217,8 +213,6 @@ func MergeCodexConfig(homeDir, model, baseURL, subagent string) error {
 				skipUntilNextSection = true
 				continue
 			} else if cl.Key == "agents.subagent" {
-				inSubagent = true
-				inSuperKiro = false
 				skipUntilNextSection = false
 				
 				// Inject subagent section
@@ -228,8 +222,6 @@ func MergeCodexConfig(homeDir, model, baseURL, subagent string) error {
 				skipUntilNextSection = true
 				continue
 			} else {
-				inSuperKiro = false
-				inSubagent = false
 				skipUntilNextSection = false
 				output = append(output, cl.Raw)
 			}

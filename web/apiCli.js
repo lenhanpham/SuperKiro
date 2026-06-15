@@ -144,6 +144,7 @@
   }
 
   function claudeManualConfig(endpoint, apiKey, opus, sonnet, haiku) {
+    endpoint = endpoint.replace(/\/v1$/, "");
     var env = { ANTHROPIC_BASE_URL: endpoint, ANTHROPIC_AUTH_TOKEN: apiKey };
     if (opus) env.ANTHROPIC_DEFAULT_OPUS_MODEL = opus;
     if (sonnet) env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnet;

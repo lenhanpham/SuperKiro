@@ -2831,7 +2831,7 @@ func (h *Handler) apiApplyCliToolSettings(w http.ResponseWriter, r *http.Request
 			for k, v := range req.Env {
 				if v != "" {
 					if k == "ANTHROPIC_BASE_URL" {
-						v = ensureV1(v)
+						v = stripV1(v)
 					}
 					env[k] = v
 				}
@@ -2959,7 +2959,7 @@ func (h *Handler) apiApplyCliToolSettings(w http.ResponseWriter, r *http.Request
 			subagent = model
 		}
 		bpURL := ensureV1(req.BaseURL)
-		if err := mergeCodexConfig(homeDir, model, bpURL, subagent); err != nil {
+		if err := MergeCodexConfig(homeDir, model, bpURL, subagent); err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":"failed to merge config: %v"}`, err), 500)
 			return
 		}
