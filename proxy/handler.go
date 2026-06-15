@@ -82,6 +82,33 @@ func getCliToolConfigured() map[string]bool {
 	return out
 }
 
+
+// isSuperKiroActiveProvider checks whether the ACTIVE (uncommented)
+// model_provider in a TOML config file is set to "superkiro".
+// A line starting with # is a comment and is ignored.
+func isSuperKiroActiveProvider(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || trimmed[0] == '#' {
+			continue
+		}
+		// Strip inline comment (everything after # preceded by space)
+		if idx := strings.IndexAny(trimmed, "#"); idx > 0 {
+			before := strings.TrimSpace(trimmed[:idx])
+			if before != "" {
+				trimmed = before
+			}
+		}
+		if !strings.Contains(strings.ToLower(trimmed), "model_provider") {
+			continue
+		}
+		if strings.Contains(trimmed, `"superkiro"`) {
+			return true
+		}
+	}
+	return false
+}
+
 func backupToolConfig(toolID string) string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -134,7 +161,7 @@ func backupToolConfig(toolID string) string {
 		if err != nil {
 			continue
 		}
-		if strings.Contains(strings.ToLower(string(data)), "superkiro") {
+		if isSuperKiroActiveProvider(data) {
 			continue
 		}
 		backupPath := fmt.Sprintf("%s.superkiro.bak.%d", p, time.Now().Unix())
