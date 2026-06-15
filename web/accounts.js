@@ -30,7 +30,9 @@ let testModalRunning = false;
       if (filterStatus === 'banned' && (!a.banStatus || a.banStatus === 'ACTIVE')) return false;
       if (filterKeyword) {
         const kw = filterKeyword.toLowerCase();
-        if (!(a.email || '').toLowerCase().includes(kw)) return false;
+        const emailMatch = (a.email || '').toLowerCase().includes(kw);
+        const nicknameMatch = (a.nickname || '').toLowerCase().includes(kw);
+        if (!emailMatch && !nicknameMatch) return false;
       }
       return true;
     });
@@ -176,6 +178,7 @@ let testModalRunning = false;
         '<input type="checkbox" class="account-checkbox" ' + (isSelected ? 'checked' : '') + ' data-id="' + idAttr + '" aria-label="' + escapeAttr(selectLabel) + '" />' +
         '<div class="account-info-text">' +
         '<div class="account-email">' + escapeHtml(displayEmail) + '</div>' +
+        '<div class="account-nickname">' + (a.nickname ? '<span class="nickname-badge">' + escapeHtml(a.nickname) + '</span>' : '') + '</div>' +
         '<div class="account-meta">' +
         getSubBadge(a.subscriptionType) +
         getTrialBadge(a) +
@@ -408,6 +411,11 @@ let testModalRunning = false;
       detailItem(t('detail.region'), a.region || 'us-east-1') +
       '</div></div>' +
 
+      '<div class="detail-section"><h4>' + escapeHtml(t('detail.nickname')) + '</h4><div class="machine-id-row">' +
+      '<input type="text" id="nicknameInput" value="' + escapeAttr(a.nickname || '') + '" placeholder="' + escapeHtml(t('detail.nicknamePlaceholder')) + '" maxlength="30" />' +
+      '<button class="btn btn-sm btn-primary" data-detail-action="saveNickname" data-id="' + idAttr + '" type="button">' + escapeHtml(t('detail.save')) + '</button>' +
+      '</div></div>' +
+
       '<div class="detail-section"><h4>' + escapeHtml(t('detail.machineId')) + '</h4><div class="machine-id-row">' +
       '<input type="text" id="machineIdInput" value="' + escapeAttr(a.machineId || '') + '" placeholder="UUID" />' +
       '<button class="btn btn-sm btn-outline" id="generateMachineIdBtn" type="button">' + escapeHtml(t('detail.generate')) + '</button>' +
@@ -608,6 +616,10 @@ let testModalRunning = false;
       toast(t('detail.proxyFormatError'), 'warning'); return;
     }
     await putAccount(id, { proxyURL: url }, t('detail.proxySaved'));
+  }
+  async function saveNickname(id) {
+    const nickname = $('nicknameInput').value.trim();
+    await putAccount(id, { nickname: nickname }, t('detail.saved'));
   }
   function closeDetailModal() { closeDialog('detailModal'); }
 

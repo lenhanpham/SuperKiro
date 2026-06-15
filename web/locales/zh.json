@@ -670,5 +670,7 @@
   "usage.drawer.account": "账号：",
   "combos.switchToFallback": "切换到回退模式",
   "combos.switchToRoundRobin": "切换到轮询模式",
-  "combos.strategyUpdated": "策略已更新"
+  "combos.strategyUpdated": "策略已更新",
+  "detail.nickname": "昵称",
+  "detail.nicknamePlaceholder": "输入昵称"
 }

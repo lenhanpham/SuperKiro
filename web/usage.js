@@ -198,6 +198,7 @@ function renderTopology() {
     }
   }
 
+
   // Also include accounts from active/recent requests that might not yet be in byAccount
   for (const r of activeReqs) {
     if (r.accountId && !accountMap[r.accountId]) {
@@ -207,6 +208,16 @@ function renderTopology() {
   for (const r of recentReqs) {
     if (r.accountId && !accountMap[r.accountId]) {
       accountMap[r.accountId] = { displayName: r.account || r.accountId };
+    }
+  }
+
+  // Fallback to accountNames from backend (populated with Nickname, Email, or truncated ID)
+  // Only override names for accounts already in the map — don't add inactive ones
+  if (stats.accountNames) {
+    for (const [accId, name] of Object.entries(stats.accountNames)) {
+      if (accountMap[accId]) {
+        accountMap[accId].displayName = name;
+      }
     }
   }
 
@@ -285,7 +296,8 @@ function renderTopology() {
   // activeAccounts contains connectionIds that are active; ensure they're in accountMap
   for (const a of activeAccounts) {
     if (!accountMap[a]) {
-      accountMap[a] = { displayName: a };
+      const name = stats.accountNames && stats.accountNames[a] ? stats.accountNames[a] : a;
+      accountMap[a] = { displayName: name };
     }
   }
 

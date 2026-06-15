@@ -670,5 +670,7 @@
   "usage.drawer.account": "Account:",
   "combos.switchToFallback": "Switch to Fallback",
   "combos.switchToRoundRobin": "Switch to Round Robin",
-  "combos.strategyUpdated": "Strategy updated"
+  "combos.strategyUpdated": "Strategy updated",
+  "detail.nickname": "Nickname",
+  "detail.nicknamePlaceholder": "Enter a nickname"
 }

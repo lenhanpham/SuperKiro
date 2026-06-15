@@ -671,5 +671,7 @@
   "usage.drawer.account": "Tài khoản:",
   "combos.switchToFallback": "Chuyển sang Fallback",
   "combos.switchToRoundRobin": "Chuyển sang Round Robin",
-  "combos.strategyUpdated": "Chiến lược đã cập nhật"
+  "combos.strategyUpdated": "Chiến lược đã cập nhật",
+  "detail.nickname": "Biệt danh",
+  "detail.nicknamePlaceholder": "Nhập biệt danh"
 }
