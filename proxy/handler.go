@@ -717,7 +717,12 @@ func (h *Handler) refreshAllAccounts() {
 			newAccessToken, newRefreshToken, newExpiresAt, profileArn, err := auth.RefreshToken(account)
 			if err != nil {
 				logger.Warnf("[BackgroundRefresh] Token refresh failed for %s: %v", account.Email, err)
-				h.handleAccountFailure(account, err)
+				if IsUnrecoverableRefreshError(err) {
+					// Permanent failure — disable so it never wastes refresh attempts
+					h.pool.DisableAccount(account.ID, fmt.Sprintf("Bad credentials: %s", err.Error()))
+				} else {
+					h.handleAccountFailure(account, err, "")
+				}
 				continue
 			}
 			account.AccessToken = newAccessToken
@@ -1018,14 +1023,14 @@ func (h *Handler) refreshModelsCache() {
 		account := &accounts[i]
 		if err := h.ensureValidToken(account); err != nil {
 			logger.Warnf("[ModelsCache] Skip %s token refresh failed: %v", account.Email, err)
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, "")
 			continue
 		}
 
 		models, err := ListAvailableModels(account)
 		if err != nil {
 			logger.Warnf("[ModelsCache] Failed to refresh for %s: %v", account.Email, err)
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, "")
 			continue
 		}
 		// Cache available models per account, used for filtering during routing
@@ -1340,7 +1345,7 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, payload *KiroPayload
 			lastErr = err
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			continue
 		}
 		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
@@ -1665,9 +1670,15 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, payload *KiroPayload
 		err := CallKiroAPI(account, payload, callback)
 		if err != nil {
 			lastErr = err
+			//  try refresh+retry before rotating accounts
+			if h.tryRefreshAndRetry(account, payload, callback, err) {
+				h.pool.RecordSuccess(account.ID, model)
+				// Retry succeeded, proceed to success path
+				goto skipAccountHandling
+			}
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			if !messageStarted {
 				continue
 			}
@@ -1678,6 +1689,7 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, payload *KiroPayload
 			})
 			return
 		}
+		skipAccountHandling:
 
 		processClaudeText("", false, true)
 		if eventThinkingOpen {
@@ -1701,7 +1713,7 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, payload *KiroPayload
 		outputTokens = estimateClaudeOutputTokens(outputContent, thinkingOutput, toolUses)
 
 		h.recordUsage(apiKeyID, account.ID, model, "claude", inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
+		h.pool.RecordSuccess(account.ID, model)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 		h.promptCache.Update(account.ID, cacheProfile)
 
@@ -1869,7 +1881,7 @@ func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, payload *KiroPayl
 			lastErr = err
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			continue
 		}
 		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
@@ -1908,11 +1920,16 @@ func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, payload *KiroPayl
 		err := CallKiroAPI(account, payload, callback)
 		if err != nil {
 			lastErr = err
+			//  try refresh+retry before rotating accounts
+			if h.tryRefreshAndRetry(account, payload, callback, err) {
+				goto skipNonStreamHandling
+			}
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			continue
 		}
+		skipNonStreamHandling:
 
 		thinkingFormat := thinkingOpts.Format
 		finalContent, extractedReasoning := extractThinkingFromContent(content)
@@ -1932,7 +1949,7 @@ func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, payload *KiroPayl
 		outputTokens = estimateClaudeOutputTokens(finalContent, rawThinkingContent, toolUses)
 
 		h.recordUsage(apiKeyID, account.ID, model, "claude", inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
+		h.pool.RecordSuccess(account.ID, model)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 		h.promptCache.Update(account.ID, cacheProfile)
 
@@ -2068,7 +2085,7 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, payload *KiroPayload
 			lastErr = err
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			continue
 		}
 
@@ -2357,9 +2374,14 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, payload *KiroPayload
 		err := CallKiroAPI(account, payload, callback)
 			if err != nil {
 				lastErr = err
+				//  try refresh+retry before rotating accounts
+				if h.tryRefreshAndRetry(account, payload, callback, err) {
+					h.pool.RecordSuccess(account.ID, model)
+					goto skipOpenAIStreamHandling
+				}
 				h.usageTracker.RemoveActive(account.ID)
 				excluded[account.ID] = true
-				h.handleAccountFailure(account, err)
+				h.handleAccountFailure(account, err, model)
 				if !responseStarted {
 					continue
 				}
@@ -2375,6 +2397,7 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, payload *KiroPayload
 				flusher.Flush()
 				return
 			}
+		skipOpenAIStreamHandling:
 
 		processText("", false, true)
 		if eventThinkingOpen {
@@ -2401,7 +2424,7 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, payload *KiroPayload
 		}
 
 		h.recordUsage(apiKeyID, account.ID, model, "claude", inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
+		h.pool.RecordSuccess(account.ID, model)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 
 		finishReason := "stop"
@@ -2455,7 +2478,7 @@ func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, payload *KiroPayl
 			lastErr = err
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			continue
 		}
 
@@ -2486,11 +2509,16 @@ func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, payload *KiroPayl
 		err := CallKiroAPI(account, payload, callback)
 		if err != nil {
 			lastErr = err
+			// try refresh+retry before rotating accounts
+			if h.tryRefreshAndRetry(account, payload, callback, err) {
+				goto skipOpenAINonStreamHandling
+			}
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			continue
 		}
+		skipOpenAINonStreamHandling:
 
 		finalContent, extractedReasoning := extractThinkingFromContent(content)
 		if thinking && reasoningContent == "" && extractedReasoning != "" {
@@ -2507,7 +2535,7 @@ func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, payload *KiroPayl
 		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
 
 		h.recordUsage(apiKeyID, account.ID, model, "claude", inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
+		h.pool.RecordSuccess(account.ID, model)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 
 		thinkingFormat := config.GetThinkingConfig().OpenAIFormat
@@ -2537,6 +2565,41 @@ func (h *Handler) sendOpenAIError(w http.ResponseWriter, status int, errType, me
 	})
 }
 
+// tryRefreshAndRetry attempts to refresh the account token and retry the API call
+// on 401/403 auth errors. Returns true if the retry succeeded, false otherwise.
+// Call this from the retry loops BEFORE marking the account as failed.
+func (h *Handler) tryRefreshAndRetry(account *config.Account, payload *KiroPayload, callback *KiroStreamCallback, err error) bool {
+	if err == nil {
+		return false
+	}
+	if !pool.IsAuthFailure(err) {
+		return false
+	}
+	logger.Warnf("[AuthRetry] Auth failure for %s, attempting token refresh + retry", account.Email)
+	newAccessToken, newRefreshToken, newExpiresAt, profileArn, refreshErr := auth.RefreshToken(account)
+	if refreshErr != nil || newAccessToken == "" {
+		logger.Warnf("[AuthRetry] Token refresh failed for %s: %v", account.Email, refreshErr)
+		return false
+	}
+	account.AccessToken = newAccessToken
+	if newRefreshToken != "" {
+		account.RefreshToken = newRefreshToken
+	}
+	account.ExpiresAt = newExpiresAt
+	h.pool.UpdateToken(account.ID, newAccessToken, newRefreshToken, newExpiresAt)
+	if profileArn != "" {
+		account.ProfileArn = profileArn
+		config.UpdateAccountProfileArn(account.ID, profileArn)
+	}
+	retryErr := CallKiroAPI(account, payload, callback)
+	if retryErr != nil {
+		logger.Warnf("[AuthRetry] Retry after refresh failed for %s: %v", account.Email, retryErr)
+		return false
+	}
+	logger.Infof("[AuthRetry] Token refresh + retry succeeded for %s", account.Email)
+	return true
+}
+
 // ensureValidToken ensures token is valid
 func (h *Handler) ensureValidToken(account *config.Account) error {
 	if account.ExpiresAt == 0 || time.Now().Unix() < account.ExpiresAt-tokenRefreshSkewSeconds {
@@ -2559,6 +2622,11 @@ func (h *Handler) ensureValidToken(account *config.Account) error {
 
 	accessToken, refreshToken, expiresAt, profileArn, err := auth.RefreshToken(account)
 	if err != nil {
+		// Permanent token refresh failure → disable account so it never retries
+		if IsUnrecoverableRefreshError(err) {
+			logger.Warnf("[TokenRefresh] Permanent refresh failure for %s: %v — disabling", account.Email, err)
+			h.pool.DisableAccount(account.ID, fmt.Sprintf("Bad credentials: %s", err.Error()))
+		}
 		return err
 	}
 

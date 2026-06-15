@@ -75,6 +75,23 @@ func isDigit(b byte) bool {
 	return b >= '0' && b <= '9'
 }
 
+// IsUnrecoverableRefreshError reports whether a token refresh error is permanent
+// (bad credentials, revoked refresh token, etc.) and the account should be
+// disabled. Unlike transient errors (network, timeout, 5xx), these cannot be
+// recovered by retry — the account must be re-authenticated.
+func IsUnrecoverableRefreshError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "bad credentials") ||
+		strings.Contains(msg, "invalid_grant") ||
+		strings.Contains(msg, "invalid grant") ||
+		strings.Contains(msg, "refresh token expired") ||
+		strings.Contains(msg, "token has expired") ||
+		strings.Contains(msg, "invalid request")
+}
+
 func (h *Handler) disableAccount(account *config.Account, banStatus, banReason string) {
 	if account == nil {
 		return
@@ -118,7 +135,7 @@ func (h *Handler) disableAccountOverage(account *config.Account) {
 	h.pool.Reload()
 }
 
-func (h *Handler) handleAccountFailure(account *config.Account, err error) {
+func (h *Handler) handleAccountFailure(account *config.Account, err error, model string) {
 	if account == nil || err == nil {
 		return
 	}
@@ -127,22 +144,26 @@ func (h *Handler) handleAccountFailure(account *config.Account, err error) {
 	switch {
 	case isOverageErrorMessage(errMsg):
 		h.disableAccountOverage(account)
-		h.pool.RecordError(account.ID, false)
+		h.pool.RecordError(account.ID, false, model)
 	case isQuotaErrorMessage(errMsg):
-		h.pool.RecordError(account.ID, true)
+		h.pool.RecordError(account.ID, true, model)
 	case isSuspensionErrorMessage(errMsg):
 		h.disableAccount(account, "BANNED", "AWS temporarily suspended - unusual user activity detected")
 	case isProfileUnavailableErrorMessage(errMsg):
 		// Profile ARN may be transiently unresolvable (upstream blip, stale token).
 		// Treat as a soft failure: short cooldown so the next request rotates account,
 		// but never auto-disable — operators can still investigate via warn logs.
-		h.pool.RecordError(account.ID, false)
+		h.pool.RecordError(account.ID, false, model)
 	case isAuthErrorMessage(errMsg):
-		// Don't disable account - token may have simply expired.
-		// 9router approach: try request, refresh on 401/403.
-		// Soft-fail so the account stays alive and can retry.
-		h.pool.RecordError(account.ID, false)
+		// Check if error is permanent (bad credentials, revoked token) or transient.
+		// Permanent: disable account so it never wastes refresh attempts.
+		// Transient: soft cooldown — token may recover on next attempt.
+		if IsUnrecoverableRefreshError(err) {
+			h.disableAccount(account, "DISABLED", "Bad credentials — token revoked or invalid")
+			return
+		}
+		h.pool.RecordError(account.ID, false, model)
 	default:
-		h.pool.RecordError(account.ID, false)
+		h.pool.RecordError(account.ID, false, model)
 	}
 }

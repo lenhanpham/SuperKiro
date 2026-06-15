@@ -21,6 +21,7 @@ type AccountPool struct {
 	cooldowns     map[string]time.Time       // account cooldown time
 	errorCounts   map[string]int             // consecutive error count
 	modelLists    map[string]map[string]bool // accountID → set of modelIDs (from ListAvailableModels)
+	modelLocks    map[string]map[string]time.Time // accountID → modelName → cooldown until
 }
 
 var (
@@ -35,6 +36,7 @@ func GetPool() *AccountPool {
 			cooldowns:   make(map[string]time.Time),
 			errorCounts: make(map[string]int),
 			modelLists:  make(map[string]map[string]bool),
+			modelLocks:  make(map[string]map[string]time.Time),
 		}
 		pool.Reload()
 	})
@@ -208,6 +210,10 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 			seen[acc.ID] = true
 			continue
 		}
+		if p.isModelLocked(acc.ID, model, now) {
+			seen[acc.ID] = true
+			continue
+		}
 		if cooldown, ok := p.cooldowns[acc.ID]; ok && now.Before(cooldown) {
 			seen[acc.ID] = true
 			continue
@@ -219,7 +225,7 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 		return acc
 	}
 
-	// fallback: find account with shortest cooldown that supports the model
+	// fallback: find account with shortest cooldown that supports the model and is not model-locked
 	var best *config.Account
 	var earliest time.Time
 	for i := range p.accounts {
@@ -233,6 +239,9 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 		if isQuotaBlocked(*acc, allowOverUsage) {
 			continue
 		}
+		if p.isModelLocked(acc.ID, model, now) {
+			continue
+		}
 		if cooldown, ok := p.cooldowns[acc.ID]; ok {
 			if best == nil || cooldown.Before(earliest) {
 				best = acc
@@ -243,6 +252,19 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 		}
 	}
 	return best
+}
+
+// isModelLocked reports whether a specific model is in cooldown for this account.
+func (p *AccountPool) isModelLocked(accountID, model string, now time.Time) bool {
+	if model == "" {
+		return false
+	}
+	locks, ok := p.modelLocks[accountID]
+	if !ok || locks == nil {
+		return false
+	}
+	until, ok := locks[model]
+	return ok && now.Before(until)
 }
 
 // CountAccountsForModel returns how many accounts in the pool support the given model.
@@ -270,27 +292,48 @@ func (p *AccountPool) GetByID(id string) *config.Account {
 	return nil
 }
 
-// RecordSuccess records a successful request and clears cooldown
-func (p *AccountPool) RecordSuccess(id string) {
+// RecordSuccess records a successful request and clears cooldown (and model lock)
+func (p *AccountPool) RecordSuccess(id string, model string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.cooldowns, id)
 	p.errorCounts[id] = 0
+	// Clear model lock for the specific model that succeeded
+	if model != "" && p.modelLocks[id] != nil {
+		delete(p.modelLocks[id], model)
+		if len(p.modelLocks[id]) == 0 {
+			delete(p.modelLocks, id)
+		}
+	}
 }
 
-// RecordError records a request error and sets cooldown
-func (p *AccountPool) RecordError(id string, isQuotaError bool) {
+// RecordError records a request error and sets model-level cooldown.
+// Uses per-model locking so a
+// quota/auth failure on one model doesn't block other models on the same account.
+// model can be "" to fall back to account-level cooldown (legacy behaviour).
+func (p *AccountPool) RecordError(id string, isQuotaError bool, model string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.errorCounts[id]++
-
+	var cooldown time.Duration
 	if isQuotaError {
-		// quota error, cooldown 1 hour
-		p.cooldowns[id] = time.Now().Add(time.Hour)
-	} else if p.errorCounts[id] >= 3 {
-		// 3 consecutive errors, cooldown 1 minute
-		p.cooldowns[id] = time.Now().Add(time.Minute)
+		cooldown = time.Hour
+	} else {
+		p.errorCounts[id]++
+		if p.errorCounts[id] >= 3 {
+			cooldown = time.Minute
+		}
+	}
+
+	if cooldown > 0 && model != "" {
+		// Per-model lock: only this model on this account is cooled down
+		if p.modelLocks[id] == nil {
+			p.modelLocks[id] = make(map[string]time.Time)
+		}
+		p.modelLocks[id][model] = time.Now().Add(cooldown)
+	} else if cooldown > 0 {
+		// Legacy account-level cooldown
+		p.cooldowns[id] = time.Now().Add(cooldown)
 	}
 }
 

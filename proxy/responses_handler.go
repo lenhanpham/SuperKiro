@@ -140,7 +140,7 @@ func (h *Handler) handleResponsesNonStream(
 	excluded := make(map[string]bool)
 	var lastErr error
 
-	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
+	for attempt := 0; ; attempt++ {
 		account := h.pool.GetNextForModelExcluding(model, excluded)
 		if account == nil {
 			break
@@ -149,7 +149,7 @@ func (h *Handler) handleResponsesNonStream(
 			lastErr = err
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			continue
 		}
 
@@ -181,7 +181,7 @@ func (h *Handler) handleResponsesNonStream(
 			lastErr = err
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			continue
 		}
 
@@ -198,7 +198,7 @@ func (h *Handler) handleResponsesNonStream(
 		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
 
 		h.recordUsage(apiKeyID, account.ID, model, "openai-responses", inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
+		h.pool.RecordSuccess(account.ID, model)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 
 		respObj := buildResponsesObject(respID, model, finalContent, toolUses, inputTokens, outputTokens, req)
@@ -326,7 +326,7 @@ func (h *Handler) handleResponsesStream(
 	var lastErr error
 	responseStarted := false
 
-	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
+	for attempt := 0; ; attempt++ {
 		account := h.pool.GetNextForModelExcluding(model, excluded)
 		if account == nil {
 			break
@@ -335,7 +335,7 @@ func (h *Handler) handleResponsesStream(
 			lastErr = err
 			h.usageTracker.RemoveActive(account.ID)
 			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
+			h.handleAccountFailure(account, err, model)
 			continue
 		}
 
@@ -487,7 +487,7 @@ func (h *Handler) handleResponsesStream(
 				lastErr = err
 				h.usageTracker.RemoveActive(account.ID)
 				excluded[account.ID] = true
-				h.handleAccountFailure(account, err)
+				h.handleAccountFailure(account, err, model)
 				continue
 			}
 			send("response.failed", map[string]interface{}{
@@ -546,7 +546,7 @@ func (h *Handler) handleResponsesStream(
 		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoning, toolUses)
 
 		h.recordUsage(apiKeyID, account.ID, model, "openai-responses", inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
+		h.pool.RecordSuccess(account.ID, model)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 
 		respObj := buildResponsesObject(respID, model, finalContent, toolUses, inputTokens, outputTokens, req)
