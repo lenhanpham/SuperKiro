@@ -131,7 +131,17 @@ let testModalRunning = false;
     return out.join('');
   }
   function formatTokenExpiry(ts) {
-    return '-';
+    if (!ts) return '-';
+    var d = new Date(ts * 1000);
+    var diffMs = d - new Date();
+    var diffMins = Math.ceil(diffMs / (1000 * 60));
+    if (diffMs <= 0) return t('accounts.expired');
+    if (diffMins < 60) return Math.ceil(diffMins) + 'm';
+    var diffHrs = Math.floor(diffMins / 60);
+    var remMins = diffMins % 60;
+    if (diffHrs < 24) return diffHrs + 'h ' + remMins + 'm';
+    var diffDays = Math.floor(diffHrs / 24);
+    return diffDays + 'd ' + (diffHrs % 24) + 'h';
   }
   function formatNum(n) {
     if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
@@ -445,7 +455,7 @@ let testModalRunning = false;
 
       '<div class="detail-section"><h4>' + escapeHtml(t('detail.subscription')) + '</h4><div class="detail-grid">' +
       detailItem(t('detail.subscriptionType'), a.subscriptionTitle || (a.subscriptionType ? formatSubscriptionLabel(a.subscriptionType) : '-')) +
-      detailItem(t('detail.tokenExpiry'), '-') +
+      detailItem(t('detail.tokenExpiry'), formatTokenExpiry(a.expiresAt)) +
       detailItem(t('detail.mainQuota'), (a.usageCurrent != null ? a.usageCurrent.toFixed(1) : 0) + ' / ' + (a.usageLimit != null ? a.usageLimit.toFixed(0) : 0)) +
       detailItem(t('detail.resetDate'), a.nextResetDate || '-') +
       (a.trialUsageLimit > 0 ?
