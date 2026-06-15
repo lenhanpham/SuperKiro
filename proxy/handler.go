@@ -3868,7 +3868,7 @@ func (h *Handler) apiMitmStatus(w http.ResponseWriter, r *http.Request) {
 		"copilot":     false,
 		"kiro":        false,
 	}
-	hostsData, err := os.ReadFile("/etc/hosts")
+	hostsData, err := os.ReadFile(hostsFilePath)
 	if err == nil {
 		hostsStr := string(hostsData)
 		if strings.Contains(hostsStr, "# 9router antigravity") {
@@ -3992,7 +3992,7 @@ func addMitmDnsEntry(tool string) {
 		entries += "127.0.0.1 " + h + " " + marker + "\n"
 	}
 
-	data, err := os.ReadFile("/etc/hosts")
+	data, err := os.ReadFile(hostsFilePath)
 	if err != nil {
 		return
 	}
@@ -4008,16 +4008,16 @@ func addMitmDnsEntry(tool string) {
 		newLines = append(newLines, line)
 	}
 	newContent := strings.Join(newLines, "\n") + "\n" + entries
-	os.WriteFile("/etc/hosts.tmp", []byte(newContent), 0644)
+	os.WriteFile(hostsTmpPath, []byte(newContent), 0644)
 	// Try to copy with sudo, fall back to direct write
-	if err := os.Rename("/etc/hosts.tmp", "/etc/hosts"); err != nil {
-		os.WriteFile("/etc/hosts", []byte(newContent), 0644)
+	if err := atomicRename(hostsTmpPath, hostsFilePath); err != nil {
+		os.WriteFile(hostsFilePath, []byte(newContent), 0644)
 	}
 }
 
 func removeMitmDnsEntry(tool string) {
 	marker := "# 9router " + tool
-	data, err := os.ReadFile("/etc/hosts")
+	data, err := os.ReadFile(hostsFilePath)
 	if err != nil {
 		return
 	}
@@ -4030,8 +4030,8 @@ func removeMitmDnsEntry(tool string) {
 		newLines = append(newLines, line)
 	}
 	newContent := strings.Join(newLines, "\n")
-	os.WriteFile("/etc/hosts.tmp", []byte(newContent), 0644)
-	os.Rename("/etc/hosts.tmp", "/etc/hosts")
+	os.WriteFile(hostsTmpPath, []byte(newContent), 0644)
+	atomicRename(hostsTmpPath, hostsFilePath)
 }
 
 func removeMitmDnsEntries() {

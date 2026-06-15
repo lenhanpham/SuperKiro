@@ -74,7 +74,7 @@ func saveResponse(resp *ResponsesObject) error {
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("write stored response: %w", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := atomicRename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("commit stored response: %w", err)
 	}

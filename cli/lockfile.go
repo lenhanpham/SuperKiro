@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -30,24 +29,18 @@ func CheckAndKillExisting(pidPath string) bool {
 		return false
 	}
 
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		os.Remove(pidPath)
-		return false
-	}
-
-	if err := process.Signal(syscall.Signal(0)); err != nil {
+	if !platformProcessAlive(pid) {
 		os.Remove(pidPath)
 		return false
 	}
 
 	fmt.Printf("  Killing existing SuperKiro (PID: %d)...\n", pid)
 
-	process.Signal(syscall.SIGTERM)
+	platformSendTermination(pid)
 	time.Sleep(500 * time.Millisecond)
 
-	if process.Signal(syscall.Signal(0)) == nil {
-		process.Signal(syscall.SIGKILL)
+	if platformProcessAlive(pid) {
+		platformForceKill(pid)
 		time.Sleep(200 * time.Millisecond)
 	}
 
