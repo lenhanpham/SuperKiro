@@ -628,7 +628,7 @@ let customSelectRefreshQueued = false;
     }
     try {
       const res = await api('/status');
-      if (res.ok) { showMain(); loadData(); }
+      if (res.ok) { showMain(); loadData(); setTimeout(function() { switchTab(localStorage.getItem('kiro_activeTab') || 'accounts'); }, 100); }
     } catch (e) { }
   }
   async function login() {
@@ -639,7 +639,7 @@ let customSelectRefreshQueued = false;
         const remember = $('rememberPwd');
         setActivePassword(password, !!(remember && remember.checked));
         showMain(); loadData();
-        setTimeout(function() { switchTab('accounts'); }, 100);
+        setTimeout(function() { switchTab(localStorage.getItem('kiro_activeTab') || 'accounts'); }, 100);
       } else {
         toast(t('login.error'), 'error');
       }
@@ -808,6 +808,7 @@ let customSelectRefreshQueued = false;
 
   // Tabs
   function switchTab(tab) {
+    localStorage.setItem('kiro_activeTab', tab);
     qsa('.tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
     qsa('.tab-content').forEach(c => c.classList.add('hidden'));
     $('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');

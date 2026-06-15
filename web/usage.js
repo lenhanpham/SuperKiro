@@ -183,28 +183,70 @@ function renderTopology() {
     topoSvgBuilt = false;
     return;
   }
-  // Clean up old first-seen entries for accounts no longer active
-  const currentActive = new Set((topoStats.activeRequests || []).map(r => r.accountId));
-  for (const k of Object.keys(topoFirstSeen)) {
-    if (!currentActive.has(k)) delete topoFirstSeen[k];
+  // Build a deduplicated account map keyed by connectionId.
+  // byAccount keys are composite (model+provider+accountName), so one account can
+  // have multiple keys — deduplicate by connectionId so each account appears once.
+  const stats = topoStats;
+  const activeReqs = stats.activeRequests || [];
+  const recentReqs = stats.recentRequests || [];
+
+  const accountMap = {};
+  for (const [key, val] of Object.entries(stats.byAccount || {})) {
+    const cid = val.connectionId;
+    if (cid && !accountMap[cid]) {
+      accountMap[cid] = { displayName: val.accountName || cid };
+    }
   }
+
+  // Also include accounts from active/recent requests that might not yet be in byAccount
+  for (const r of activeReqs) {
+    if (r.accountId && !accountMap[r.accountId]) {
+      accountMap[r.accountId] = { displayName: r.account || r.accountId };
+    }
+  }
+  for (const r of recentReqs) {
+    if (r.accountId && !accountMap[r.accountId]) {
+      accountMap[r.accountId] = { displayName: r.account || r.accountId };
+    }
+  }
+
+  const accounts = Object.keys(accountMap);
+  const activeReqsSet = new Set();
+  for (const r of activeReqs) {
+    if (r.accountId) activeReqsSet.add(r.accountId);
+  }
+  const recentReqsSet = new Set();
+  for (const r of recentReqs) {
+    if (r.accountId) recentReqsSet.add(r.accountId);
+  }
+
   // Tick timer for active timeout (create once)
   if (!topoTickTimer) {
     topoTickTimer = setInterval(function() {
       const now = Date.now();
-      const activeReqs = usageState.stats?.activeRequests || [];
+      const s = usageState.stats;
+      if (!s) return;
+      
+      const aReqs = s.activeRequests || [];
+      const rReqs = s.recentRequests || [];
       let timedOut = false;
-      for (const r of activeReqs) {
-        const ts = topoFirstSeen[r.accountId];
-        if (ts && now - ts >= FE_ACTIVE_TIMEOUT_MS) {
-          timedOut = true;
+      
+      for (const r of aReqs) {
+        if (r.accountId) {
+          const ts = topoFirstSeen[r.accountId];
+          if (ts && now - ts >= FE_ACTIVE_TIMEOUT_MS) timedOut = true;
         }
       }
+      for (const r of rReqs) {
+        if (r.accountId) {
+          const ts = topoFirstSeen[r.accountId];
+          if (ts && now - ts >= FE_ACTIVE_TIMEOUT_MS) timedOut = true;
+        }
+      }
+      
       if (timedOut) {
-        // Force re-render to apply timeout
         renderTopology();
-      } else if (usageState.stats?.activeRequests?.length > 0) {
-        // Tick active dots animation by re-applying transform
+      } else if (aReqs.length > 0 || rReqs.length > 0) {
         const container = document.getElementById('usageTopology');
         if (container && container.querySelector('svg')) {
           applyTopoTransform();
@@ -213,33 +255,46 @@ function renderTopology() {
     }, FE_ACTIVE_TICK_MS);
   }
 
-  const stats = topoStats;
-  const historicalAccounts = new Set(Object.keys(stats.byAccount || {}));
-  const activeReqs = stats.activeRequests || [];
-  const rawActiveAccounts = new Set(activeReqs.map(r => r.accountId));
-  
-  // Track first-seen per account (for 60s timeout)
+  // Track first-seen per account (for 60s timeout).
+  // Refresh timestamp for currently active accounts, init for recently active ones.
   const now = Date.now();
-  for (const a of rawActiveAccounts) {
+  for (const a of activeReqsSet) {
+    topoFirstSeen[a] = now;
+  }
+  for (const a of recentReqsSet) {
     if (!topoFirstSeen[a]) topoFirstSeen[a] = now;
   }
+  // Remove accounts not seen in either set for longer than the timeout
+  const stillSeen = new Set([...activeReqsSet, ...recentReqsSet]);
   for (const a of Object.keys(topoFirstSeen)) {
-    if (!rawActiveAccounts.has(a)) delete topoFirstSeen[a];
+    if (!stillSeen.has(a) && now - (topoFirstSeen[a] || 0) >= FE_ACTIVE_TIMEOUT_MS) {
+      delete topoFirstSeen[a];
+    }
   }
-  // Apply timeout: accounts active > 60s are excluded
+  // Apply timeout: accounts with firstSeen > 60s ago are excluded
   const activeAccounts = new Set();
-  for (const a of rawActiveAccounts) {
+  for (const a of Object.keys(topoFirstSeen)) {
     const ts = topoFirstSeen[a];
     if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) activeAccounts.add(a);
   }
 
-  const allAccounts = new Set([...historicalAccounts, ...activeAccounts]);
-  const accounts = Array.from(allAccounts).filter(Boolean);
+  // activeAccounts contains connectionIds that are active; ensure they're in accountMap
+  for (const a of activeAccounts) {
+    if (!accountMap[a]) {
+      accountMap[a] = { displayName: a };
+    }
+  }
+
+  const allAccounts = new Set([...accounts, ...activeAccounts]);
+  const accountsList = Array.from(allAccounts);
+  // Use accountsList as accounts (connectionId-based, one per account)
+  // Replace the accounts variable so downstream code uses deduplicated list
+  accounts.length = 0;
+  accounts.push(...accountsList);
   const activeSet = activeAccounts;
 
   // Determine "last" account (most recent request)
-  const lastAccountId = (stats.recentRequests && stats.recentRequests.length > 0)
-    ? stats.recentRequests[0].accountId : null;
+  const lastAccountId = (recentReqs.length > 0) ? recentReqs[0].accountId : null;
 
 
 
@@ -250,7 +305,6 @@ function renderTopology() {
   }
 
   // Use account names from backend (populated by GetStats)
-  const accountNameMap = stats.accountNames || {};
 
   const width = container.clientWidth || 600;
   const height = container.clientHeight || 340;
@@ -270,7 +324,7 @@ function renderTopology() {
 
   // Calculate each account node width dynamically from display text (3px padding each side)
   const accountNodeWidths = accounts.map((id, i) => {
-    const rawName = accountNameMap[id] || id;
+    const rawName = accountMap[id] ? accountMap[id].displayName : id;
     const dispName = rawName.length > 6 ? rawName.substring(0, 6) + '\u2026' : rawName;
     const textW = estimateTextWidth(dispName, nodeFontSize);
     return Math.max(40, Math.ceil(textW + 6));
@@ -383,7 +437,7 @@ function renderTopology() {
     const ax = cx + rx * Math.cos(angle);
     const ay = cy + ry * Math.sin(angle);
     const isActive = activeSet.has(accounts[i]);
-    const fullName = accountNameMap[accounts[i]] || accounts[i];
+    const fullName = accountMap[accounts[i]] ? accountMap[accounts[i]].displayName : accounts[i];
     const displayName = fullName.length > 6 ? fullName.substring(0, 6) + '\u2026' : fullName;
     const nodeW = accountNodeWidths[i];
 
