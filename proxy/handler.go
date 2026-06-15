@@ -2959,20 +2959,8 @@ func (h *Handler) apiApplyCliToolSettings(w http.ResponseWriter, r *http.Request
 			subagent = model
 		}
 		bpURL := ensureV1(req.BaseURL)
-		tomlContent := fmt.Sprintf(`# SuperKiro Configuration for Codex CLI
-model = "%s"
-model_provider = "superkiro"
-
-[model_providers.superkiro]
-name = "SuperKiro"
-base_url = "%s"
-wire_api = "responses"
-
-[agents.subagent]
-model = "%s"
-`, model, bpURL, subagent)
-		if err := os.WriteFile(filepath.Join(codexDir, "config.toml"), []byte(tomlContent), 0644); err != nil {
-			http.Error(w, `{"error":"failed to write config.toml"}`, 500)
+		if err := mergeCodexConfig(homeDir, model, bpURL, subagent); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"failed to merge config: %v"}`, err), 500)
 			return
 		}
 		auth := map[string]string{"auth_mode": "apikey", "OPENAI_API_KEY": req.APIKey}
