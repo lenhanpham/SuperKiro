@@ -108,7 +108,10 @@ func (h *Handler) handleAccountFailure(account *config.Account, err error) {
 		// but never auto-disable — operators can still investigate via warn logs.
 		h.pool.RecordError(account.ID, false)
 	case isAuthErrorMessage(errMsg):
-		h.disableAccount(account, "BANNED", "Authentication failed - token invalid or expired")
+		// Don't disable account - token may have simply expired.
+		// 9router approach: try request, refresh on 401/403.
+		// Soft-fail so the account stays alive and can retry.
+		h.pool.RecordError(account.ID, false)
 	default:
 		h.pool.RecordError(account.ID, false)
 	}

@@ -4052,6 +4052,20 @@ img.brand-icon {
 .usage-topo-edge {
   stroke: var(--border);
   stroke-width: 1.5;
+  transition: opacity 0.5s ease-out, stroke-width 0.3s ease;
+}
+
+.usage-topo-edge.fading-out {
+  opacity: 0.3;
+  stroke-width: 1;
+}
+
+.usage-topo-node {
+  transition: opacity 0.5s ease-out;
+}
+
+.usage-topo-node.fading-out {
+  opacity: 0.4;
 }
 
 .usage-topo-flow-dot {

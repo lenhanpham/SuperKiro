@@ -226,43 +226,38 @@ function renderTopology() {
       const now = Date.now();
       const s = usageState.stats;
       if (!s) return;
-      
+
       const aReqs = s.activeRequests || [];
       const rReqs = s.recentRequests || [];
-      let timedOut = false;
-      
-      for (const r of aReqs) {
-        if (r.accountId) {
-          const ts = topoFirstSeen[r.accountId];
-          if (ts && now - ts >= FE_ACTIVE_TIMEOUT_MS) timedOut = true;
+
+      // Only check for timeouts if we have tracked accounts
+      if (Object.keys(topoFirstSeen).length === 0) return;
+
+      // Find if any account has timed out (>60s since last activity)
+      let needsRerender = false;
+      for (const accountId of Object.keys(topoFirstSeen)) {
+        const ts = topoFirstSeen[accountId];
+        if (ts && now - ts >= FE_ACTIVE_TIMEOUT_MS) {
+          needsRerender = true;
+          break;
         }
       }
-      for (const r of rReqs) {
-        if (r.accountId) {
-          const ts = topoFirstSeen[r.accountId];
-          if (ts && now - ts >= FE_ACTIVE_TIMEOUT_MS) timedOut = true;
-        }
-      }
-      
-      if (timedOut) {
+
+      if (needsRerender) {
         renderTopology();
-      } else if (aReqs.length > 0 || rReqs.length > 0) {
-        const container = document.getElementById('usageTopology');
-        if (container && container.querySelector('svg')) {
-          applyTopoTransform();
-        }
       }
     }, FE_ACTIVE_TICK_MS);
   }
 
   // Track first-seen per account (for 60s timeout).
-  // Refresh timestamp for currently active accounts, init for recently active ones.
+  // Refresh timestamp for currently active accounts AND recently completed ones.
   const now = Date.now();
   for (const a of activeReqsSet) {
     topoFirstSeen[a] = now;
   }
   for (const a of recentReqsSet) {
-    if (!topoFirstSeen[a]) topoFirstSeen[a] = now;
+    // Always refresh timestamp for recent accounts to reset the 60s timeout
+    topoFirstSeen[a] = now;
   }
   // Remove accounts not seen in either set for longer than the timeout
   const stillSeen = new Set([...activeReqsSet, ...recentReqsSet]);
@@ -272,10 +267,19 @@ function renderTopology() {
     }
   }
   // Apply timeout: accounts with firstSeen > 60s ago are excluded
+  // Also track accounts in final 10s (fade-out phase)
   const activeAccounts = new Set();
+  const fadingAccounts = new Set();
   for (const a of Object.keys(topoFirstSeen)) {
     const ts = topoFirstSeen[a];
-    if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) activeAccounts.add(a);
+    const age = now - ts;
+    if (!ts || age < FE_ACTIVE_TIMEOUT_MS) {
+      activeAccounts.add(a);
+      // Mark as fading if in the last 10 seconds before timeout
+      if (age >= FE_ACTIVE_TIMEOUT_MS - 10000) {
+        fadingAccounts.add(a);
+      }
+    }
   }
 
   // activeAccounts contains connectionIds that are active; ensure they're in accountMap
@@ -360,15 +364,16 @@ function renderTopology() {
     const ax = cx + rx * Math.cos(angle);
     const ay = cy + ry * Math.sin(angle);
     const acctW = accountNodeWidths[i];
-    
+
     // Determine edge state
     const isActive = activeSet.has(acctId);
+    const isFading = fadingAccounts.has(acctId);
     const isLast = !isActive && lastAccountId === acctId;
     // Error: check if any recent request for this account has non-success status
     const hasError = !isActive && (stats.recentRequests || []).some(r =>
       r.accountId === acctId && r.status && r.status !== 'success' && r.status !== 'ok'
     );
-    
+
     // Edge style matching 9router
     let edgeColor, edgeWidth, edgeOpacity;
     if (hasError) {
@@ -380,7 +385,7 @@ function renderTopology() {
     } else {
       edgeColor = 'var(--color-border)'; edgeWidth = 1; edgeOpacity = 0.3;
     }
-    
+
     // Smart handle positioning matching 9router
     let sourceHandle, targetHandle;
     // angle is from -π/2 (top) clockwise
@@ -397,7 +402,7 @@ function renderTopology() {
       // Left side
       sourceHandle = 'left'; targetHandle = 'right';
     }
-    
+
     // Compute start/end points at the selected edges of each box
     const edgeOffsets = {
       top:    { x: 0, y: -centerNodeH/2 },
@@ -420,7 +425,7 @@ function renderTopology() {
       'stroke="' + edgeColor + '" stroke-width="' + edgeWidth + '" ' +
       'stroke-opacity="' + edgeOpacity + '" ' +
       'stroke-dasharray="' + (isActive ? '8 4' : 'none') + '" ' +
-      'class="usage-topo-edge' + (isActive ? ' active' : '') + '" />';
+      'class="usage-topo-edge' + (isActive ? ' active' : '') + (isFading ? ' fading' : '') + '" />';
 
     if (isActive) {
       svg += '<circle cx="' + sx + '" cy="' + sy + '" r="4" fill="#22c55e" class="usage-topo-flow-dot">' +
@@ -436,12 +441,14 @@ function renderTopology() {
     const angle = (2 * Math.PI * i) / n - Math.PI / 2;
     const ax = cx + rx * Math.cos(angle);
     const ay = cy + ry * Math.sin(angle);
-    const isActive = activeSet.has(accounts[i]);
-    const fullName = accountMap[accounts[i]] ? accountMap[accounts[i]].displayName : accounts[i];
+    const acctId = accounts[i];
+    const isActive = activeSet.has(acctId);
+    const isFading = fadingAccounts.has(acctId);
+    const fullName = accountMap[acctId] ? accountMap[acctId].displayName : acctId;
     const displayName = fullName.length > 6 ? fullName.substring(0, 6) + '\u2026' : fullName;
     const nodeW = accountNodeWidths[i];
 
-    svg += '<g class="usage-topo-node' + (isActive ? ' active' : '') + '" data-account="' + escAttr(accounts[i]) + '">';
+    svg += '<g class="usage-topo-node' + (isActive ? ' active' : '') + (isFading ? ' fading' : '') + '" data-account="' + escAttr(acctId) + '">';
     // Tooltip
     svg += '<title>' + escHtml(fullName) + '</title>';
     // Rectangle background

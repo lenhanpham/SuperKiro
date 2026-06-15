@@ -103,12 +103,6 @@ func (p *AccountPool) GetNextExcluding(excluded map[string]bool) *config.Account
 			continue
 		}
 
-		// skip tokens about to expire
-		if acc.ExpiresAt > 0 && time.Now().Unix() > acc.ExpiresAt-tokenRefreshSkewSeconds {
-			seen[acc.ID] = true
-			continue
-		}
-
 		// Skip accounts whose quota is exhausted, unless overrides apply.
 		if isQuotaBlocked(*acc, allowOverUsage) {
 			seen[acc.ID] = true
@@ -215,10 +209,6 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 			continue
 		}
 		if cooldown, ok := p.cooldowns[acc.ID]; ok && now.Before(cooldown) {
-			seen[acc.ID] = true
-			continue
-		}
-		if acc.ExpiresAt > 0 && time.Now().Unix() > acc.ExpiresAt-tokenRefreshSkewSeconds {
 			seen[acc.ID] = true
 			continue
 		}

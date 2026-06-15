@@ -120,8 +120,6 @@ let testModalRunning = false;
     } else {
       if (!a.hasToken)
         out.push('<span class="badge badge-error">' + escapeHtml(t('accounts.noToken')) + '</span>');
-      else if (a.expiresAt && a.expiresAt < Date.now() / 1000)
-        out.push('<span class="badge badge-warning">' + escapeHtml(t('accounts.expired')) + '</span>');
       else
         out.push('<span class="badge badge-success">' + escapeHtml(t('accounts.normal')) + '</span>');
       out.push(a.enabled
@@ -131,12 +129,7 @@ let testModalRunning = false;
     return out.join('');
   }
   function formatTokenExpiry(ts) {
-    if (!ts) return '-';
-    const diff = ts - Date.now() / 1000;
-    if (diff <= 0) return t('time.expired');
-    if (diff < 3600) return Math.floor(diff / 60) + t('time.minutes');
-    if (diff < 86400) return Math.floor(diff / 3600) + t('time.hours');
-    return Math.floor(diff / 86400) + t('time.days');
+    return '-';
   }
   function formatNum(n) {
     if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
@@ -444,13 +437,13 @@ let testModalRunning = false;
 
       '<div class="detail-section"><h4>' + escapeHtml(t('detail.subscription')) + '</h4><div class="detail-grid">' +
       detailItem(t('detail.subscriptionType'), a.subscriptionTitle || (a.subscriptionType ? formatSubscriptionLabel(a.subscriptionType) : '-')) +
-      detailItem(t('detail.tokenExpiry'), a.expiresAt ? new Date(a.expiresAt * 1000).toLocaleString() : '-') +
+      detailItem(t('detail.tokenExpiry'), '-') +
       detailItem(t('detail.mainQuota'), (a.usageCurrent != null ? a.usageCurrent.toFixed(1) : 0) + ' / ' + (a.usageLimit != null ? a.usageLimit.toFixed(0) : 0)) +
       detailItem(t('detail.resetDate'), a.nextResetDate || '-') +
       (a.trialUsageLimit > 0 ?
         detailItem(t('detail.trialQuota'), (a.trialUsageCurrent != null ? a.trialUsageCurrent.toFixed(1) : 0) + ' / ' + a.trialUsageLimit.toFixed(0)) +
         detailItem(t('detail.trialStatus'), a.trialStatus || '-') +
-        detailItem(t('detail.trialExpiry'), a.trialExpiresAt ? new Date(a.trialExpiresAt * 1000).toLocaleString() : '-')
+        detailItem(t('detail.trialExpiry'), '-')
         : '') +
       '</div></div>' +
 
