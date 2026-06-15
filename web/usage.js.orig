@@ -183,41 +183,43 @@ function renderTopology() {
     topoSvgBuilt = false;
     return;
   }
-  // Build a deduplicated account map keyed by accountId.
-    // We use accountId as the key to ensure each account appears once.
-    const stats = topoStats;
-    const activeReqs = stats.activeRequests || [];
-    const recentReqs = stats.recentRequests || [];
-    const accountMap = {};
+  // Build a deduplicated account map keyed by connectionId.
+  // byAccount keys are composite (model+provider+accountName), so one account can
+  // have multiple keys — deduplicate by connectionId so each account appears once.
+  const stats = topoStats;
+  const activeReqs = stats.activeRequests || [];
+  const recentReqs = stats.recentRequests || [];
 
-    // First, populate from byAccount (keys are already accountIds from backend)
-    for (const [accountId, val] of Object.entries(stats.byAccount || {})) {
-        if (accountId && !accountMap[accountId]) {
-            accountMap[accountId] = { displayName: accountId };
-        }
+  const accountMap = {};
+  for (const [key, val] of Object.entries(stats.byAccount || {})) {
+    const cid = val.connectionId;
+    if (cid && !accountMap[cid]) {
+      accountMap[cid] = { displayName: val.accountName || cid };
     }
+  }
 
-    // Add accounts from active requests
-    for (const r of activeReqs) {
-        if (r.accountId && !accountMap[r.accountId]) {
-            accountMap[r.accountId] = { displayName: r.account || r.accountId };
-        }
-    }
 
-    // Add accounts from recent requests
-    for (const r of recentReqs) {
-        if (r.accountId && !accountMap[r.accountId]) {
-            accountMap[r.accountId] = { displayName: r.account || r.accountId };
-        }
+  // Also include accounts from active/recent requests that might not yet be in byAccount
+  for (const r of activeReqs) {
+    if (r.accountId && !accountMap[r.accountId]) {
+      accountMap[r.accountId] = { displayName: r.account || r.accountId };
     }
+  }
+  for (const r of recentReqs) {
+    if (r.accountId && !accountMap[r.accountId]) {
+      accountMap[r.accountId] = { displayName: r.account || r.accountId };
+    }
+  }
 
-    // Set proper display names from accountNames (emails, nicknames, etc.)
-    if (stats.accountNames) {
-        for (const [accId, name] of Object.entries(stats.accountNames)) {
-            if (!accountMap[accId]) accountMap[accId] = {};
-            accountMap[accId].displayName = name;
-        }
+  // Fallback to accountNames from backend (populated with Nickname, Email, or truncated ID)
+  // Only override names for accounts already in the map — don't add inactive ones
+  if (stats.accountNames) {
+    for (const [accId, name] of Object.entries(stats.accountNames)) {
+      if (accountMap[accId]) {
+        accountMap[accId].displayName = name;
+      }
     }
+  }
 
   const accounts = Object.keys(accountMap);
   const activeReqsSet = new Set();
