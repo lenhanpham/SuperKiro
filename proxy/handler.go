@@ -4611,6 +4611,7 @@ func (h *Handler) apiStartIamSso(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		StartUrl string `json:"startUrl"`
 		Region   string `json:"region"`
+			ProfileArn   string `json:"profileArn,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(400)
@@ -4694,6 +4695,7 @@ func (h *Handler) apiCompleteIamSso(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiStartBuilderIdLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Region string `json:"region"`
+			ProfileArn   string `json:"profileArn,omitempty"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
@@ -4791,6 +4793,7 @@ func (h *Handler) apiImportSsoToken(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		BearerToken string `json:"bearerToken"`
 		Region      string `json:"region"`
+			ProfileArn   string `json:"profileArn,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(400)
@@ -5179,6 +5182,7 @@ func (h *Handler) apiImportCredentials(w http.ResponseWriter, r *http.Request) {
 		AuthMethod   string `json:"authMethod"`
 		Provider     string `json:"provider"`
 		Region       string `json:"region"`
+			ProfileArn   string `json:"profileArn,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(400)
@@ -5885,6 +5889,7 @@ func (h *Handler) apiExportAccounts(w http.ResponseWriter, r *http.Request) {
 		ClientID     string `json:"clientId,omitempty"`
 		ClientSecret string `json:"clientSecret,omitempty"`
 		Region       string `json:"region,omitempty"`
+			ProfileArn   string `json:"profileArn,omitempty"`
 		ExpiresAt    int64  `json:"expiresAt"`
 		AuthMethod   string `json:"authMethod,omitempty"`
 		Provider     string `json:"provider,omitempty"`
@@ -5969,6 +5974,7 @@ func (h *Handler) apiExportAccounts(w http.ResponseWriter, r *http.Request) {
 				ClientID:     a.ClientID,
 				ClientSecret: a.ClientSecret,
 				Region:       a.Region,
+				ProfileArn:   a.ProfileArn,
 				ExpiresAt:    a.ExpiresAt * 1000, // convert to millisecond timestamp
 				AuthMethod:   authMethod,
 				Provider:     a.Provider,
