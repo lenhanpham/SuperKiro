@@ -242,8 +242,28 @@ func RefreshToken(account *config.Account) (string, string, int64, string, strin
 	client := GetAuthClientForProxy(proxyURL)
 
 	if account.AuthMethod == "social" {
+		// Try social refresh first (kiro.dev/refreshToken).
 		at, rt, exp, pa, err := refreshSocialToken(account.RefreshToken, client)
-		return at, rt, exp, pa, "", "", err
+		if err == nil {
+			return at, rt, exp, pa, "", "", nil
+		}
+		// Social refresh failed. For Google social tokens, the kiro.dev refresh
+		// endpoint may not accept them. Try OIDC refresh with a freshly registered
+		// client (same fallback OmniRoute uses for OIDC accounts).
+		region := account.Region
+		if region == "" {
+			region = "us-east-1"
+		}
+		newClientID, newClientSecret, regErr := registerOIDCClientInternal(region)
+		if regErr == nil && newClientID != "" {
+			at, rt, exp, pa, oidcErr := refreshOIDCToken(
+				account.RefreshToken, newClientID, newClientSecret, region, client,
+			)
+			if oidcErr == nil {
+				return at, rt, exp, pa, newClientID, newClientSecret, nil
+			}
+		}
+		return "", "", 0, "", "", "", err
 	}
 
 	// OIDC refresh first (Builder ID / IDC).
@@ -378,6 +398,7 @@ func refreshSocialToken(refreshToken string, client *http.Client) (string, strin
 
 	payload := map[string]string{
 		"refreshToken": refreshToken,
+		"clientId":     "kiro-cli",
 	}
 
 	body, _ := json.Marshal(payload)

@@ -20,7 +20,10 @@ import (
 	"github.com/google/uuid"
 )
 
-const tokenRefreshSkewSeconds int64 = 120
+// Proactive refresh buffer: refresh token when within 5 minutes of expiry.
+// Matches OmniRoute/9router's REFRESH_LEAD_MS[kiro] = 5 * 60 * 1000.
+// This ensures tokens are refreshed BEFORE they expire, preventing 403 errors.
+const tokenRefreshSkewSeconds int64 = 300
 
 var (
 	cliToolConfigured   = map[string]bool{}
@@ -684,7 +687,7 @@ func NewHandler() *Handler {
 
 // backgroundRefresh periodically refreshes account info
 func (h *Handler) backgroundRefresh() {
-	ticker := time.NewTicker(30 * time.Minute) // refresh every 30 minutes
+	ticker := time.NewTicker(10 * time.Minute) // refresh every 10 minutes (was 30)
 	defer ticker.Stop()
 
 	// run once after a 10s delay at startup
