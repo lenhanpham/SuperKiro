@@ -2722,6 +2722,16 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 		h.apiPollBuilderIdAuth(w, r)
 	case path == "/auth/sso-token" && r.Method == "POST":
 		h.apiImportSsoToken(w, r)
+	case path == "/auth/social/start" && r.Method == "POST":
+		h.apiSocialLoginStart(w, r)
+	case path == "/auth/social/poll" && r.Method == "POST":
+		h.apiSocialLoginPoll(w, r)
+	case path == "/auth/kiro-cli" && r.Method == "POST":
+		h.apiImportKiroCli(w, r)
+	case path == "/auth/kiro-cli-register" && r.Method == "POST":
+		h.apiRegisterKiroCli(w, r)
+	case path == "/auth/sso-cache" && r.Method == "POST":
+		h.apiImportSSOCache(w, r)
 	case path == "/auth/credentials" && r.Method == "POST":
 		h.apiImportCredentials(w, r)
 	case path == "/status" && r.Method == "GET":
@@ -4811,8 +4821,9 @@ func (h *Handler) apiImportSsoToken(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// get user info
-		email, _, _ := auth.GetUserInfo(accessToken)
+		// Social tokens from kiro.dev can't call CodeWhisperer getUsageLimits,
+		// so extract email from JWT claims instead.
+		email := auth.ExtractEmailFromJWT(accessToken)
 
 		// create account
 		account := config.Account{
@@ -4856,6 +4867,306 @@ func (h *Handler) apiImportSsoToken(w http.ResponseWriter, r *http.Request) {
 		"success":  true,
 		"accounts": imported,
 		"errors":   errors,
+	})
+}
+
+func (h *Handler) apiSocialLoginStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Provider string `json:"provider"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+	if req.Provider != "google" && req.Provider != "github" {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid provider. Use 'google' or 'github'"})
+		return
+	}
+
+	session, err := auth.StartSocialLogin(req.Provider)
+	if err != nil {
+		w.WriteHeader(502)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"authUrl":    session.VerifyURL,
+		"deviceCode": session.DeviceCode,
+		"userCode":   session.UserCode,
+		"expiresIn":  int(time.Until(session.ExpiresAt).Seconds()),
+		"interval":   session.Interval,
+		"provider":   req.Provider,
+	})
+}
+
+func (h *Handler) apiSocialLoginPoll(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DeviceCode string `json:"deviceCode"`
+		Provider   string `json:"provider"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+
+	accessToken, refreshToken, profileArn, expiresIn, err := auth.PollSocialLogin(req.DeviceCode, req.Provider)
+	if err != nil {
+		errMsg := err.Error()
+		if errMsg == "authorization_pending" || errMsg == "slow_down" {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"pending": true,
+				"error":   errMsg,
+			})
+			return
+		}
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
+		return
+	}
+
+	// get user info
+	email, _, _ := auth.GetUserInfo(accessToken)
+
+	providerName := "Google"
+	if req.Provider == "github" {
+		providerName = "Github"
+	}
+	authMethod := "social"
+
+	account := config.Account{
+		ID:           auth.GenerateAccountID(),
+		Email:        email,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		AuthMethod:   authMethod,
+		Provider:     providerName,
+		Region:       "us-east-1",
+		ExpiresAt:    time.Now().Unix() + int64(expiresIn),
+		Enabled:      true,
+		MachineId:    config.GenerateMachineId(),
+		ProfileArn:   profileArn,
+	}
+
+	if err := config.AddAccount(account); err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	h.pool.Reload()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"account": map[string]interface{}{
+			"id":    account.ID,
+			"email": account.Email,
+		},
+	})
+}
+
+func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
+	creds, err := auth.ImportKiroCli()
+	if err != nil {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Validate via refresh. kiro-cli gives us clientId/clientSecret for OIDC refresh.
+	region := creds.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+	tempAccount := &config.Account{
+		RefreshToken: creds.RefreshToken,
+		AccessToken:  creds.AccessToken,
+		ClientID:     creds.ClientID,
+		ClientSecret: creds.ClientSecret,
+		AuthMethod:   "idc",
+		Region:       region,
+	}
+	newAccessToken, newRefreshToken, expiresAt, profileArn, err := auth.RefreshToken(tempAccount)
+	if err != nil {
+		// Fall back to social refresh path (no clientId/clientSecret needed).
+		tempAccount2 := &config.Account{
+			RefreshToken: creds.RefreshToken,
+			AuthMethod:   "social",
+			Region:       region,
+		}
+		newAccessToken, newRefreshToken, expiresAt, profileArn, err = auth.RefreshToken(tempAccount2)
+		if err != nil {
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + err.Error()})
+			return
+		}
+	}
+	if newRefreshToken != "" {
+		creds.RefreshToken = newRefreshToken
+	}
+	if newAccessToken != "" {
+		creds.AccessToken = newAccessToken
+	}
+	// Prefer profileArn from refresh response, fall back to SQLite scan.
+	if profileArn == "" {
+		profileArn = creds.ProfileArn
+	}
+
+	// get user info
+	email, _, _ := auth.GetUserInfo(creds.AccessToken)
+
+	account := config.Account{
+		ID:           auth.GenerateAccountID(),
+		Email:        email,
+		AccessToken:  creds.AccessToken,
+		RefreshToken: creds.RefreshToken,
+		ClientID:     creds.ClientID,
+		ClientSecret: creds.ClientSecret,
+		AuthMethod:   "idc",
+		Provider:     "BuilderId",
+		Region:       region,
+		ExpiresAt:    expiresAt,
+		Enabled:      true,
+		MachineId:    config.GenerateMachineId(),
+		ProfileArn:   profileArn,
+	}
+
+	if err := config.AddAccount(account); err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	h.pool.Reload()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"source":  "kiro-cli-sqlite",
+		"account": map[string]interface{}{
+			"id":    account.ID,
+			"email": account.Email,
+		},
+	})
+}
+
+func (h *Handler) apiRegisterKiroCli(w http.ResponseWriter, r *http.Request) {
+	// Re-register OIDC client for kiro-cli imported account with social refresh fallback.
+	creds, err := auth.ImportKiroCli()
+	if err != nil {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	region := creds.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+	tempAccount := &config.Account{
+		RefreshToken: creds.RefreshToken,
+		AuthMethod:   "social",
+		Region:       region,
+	}
+	newAccessToken, newRefreshToken, expiresAt, profileArn, err := auth.RefreshToken(tempAccount)
+	if err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + err.Error()})
+		return
+	}
+
+	email, _, _ := auth.GetUserInfo(newAccessToken)
+	if profileArn == "" {
+		profileArn = creds.ProfileArn
+	}
+
+	account := config.Account{
+		ID:           auth.GenerateAccountID(),
+		Email:        email,
+		AccessToken:  newAccessToken,
+		RefreshToken: newRefreshToken,
+		AuthMethod:   "idc",
+		Provider:     "BuilderId",
+		Region:       region,
+		ExpiresAt:    expiresAt,
+		Enabled:      true,
+		MachineId:    config.GenerateMachineId(),
+		ProfileArn:   profileArn,
+	}
+
+	if err := config.AddAccount(account); err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	h.pool.Reload()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"source":  "kiro-cli-sqlite",
+		"account": map[string]interface{}{
+			"id":    account.ID,
+			"email": account.Email,
+		},
+	})
+}
+
+func (h *Handler) apiImportSSOCache(w http.ResponseWriter, r *http.Request) {
+	creds, err := auth.ImportSSOCache()
+	if err != nil {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	region := "us-east-1"
+	if r.URL.Query().Get("region") != "" {
+		region = r.URL.Query().Get("region")
+	}
+
+	// Register a new OIDC client and refresh the token (same pattern as ImportFromSsoToken).
+	accessToken, newRefreshToken, clientID, clientSecret, expiresIn, profileArn, err := auth.ImportFromSsoToken(creds.RefreshToken, region)
+	if err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + err.Error()})
+		return
+	}
+	if newRefreshToken != "" {
+		creds.RefreshToken = newRefreshToken
+	}
+
+	// get user info
+	email, _, _ := auth.GetUserInfo(accessToken)
+
+	account := config.Account{
+		ID:           auth.GenerateAccountID(),
+		Email:        email,
+		AccessToken:  accessToken,
+		RefreshToken: creds.RefreshToken,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		AuthMethod:   "idc",
+		Provider:     "BuilderId",
+		Region:       region,
+		ExpiresAt:    time.Now().Unix() + int64(expiresIn),
+		Enabled:      true,
+		MachineId:    config.GenerateMachineId(),
+		ProfileArn:   profileArn,
+	}
+
+	if err := config.AddAccount(account); err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	h.pool.Reload()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"source":  creds.Source,
+		"account": map[string]interface{}{
+			"id":    account.ID,
+			"email": account.Email,
+		},
 	})
 }
 

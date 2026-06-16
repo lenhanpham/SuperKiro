@@ -2,10 +2,12 @@ package auth
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -336,6 +338,49 @@ func GetUserInfo(accessToken string) (email, userID string, err error) {
 	}
 	json.NewDecoder(resp.Body).Decode(&result)
 	return result.UserInfo.Email, result.UserInfo.UserID, nil
+}
+
+// ExtractEmailFromJWT decodes the JWT access token and extracts the email claim.
+// Falls back to preferred_username then sub. Returns empty string on failure.
+func ExtractEmailFromJWT(accessToken string) string {
+	if accessToken == "" {
+		return ""
+	}
+	parts := strings.Split(accessToken, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	// Add padding for base64 decoding
+	payload := parts[1]
+	switch len(payload) % 4 {
+	case 2:
+		payload += "=="
+	case 3:
+		payload += "="
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		// Try standard base64
+		decoded, err = base64.StdEncoding.DecodeString(payload)
+		if err != nil {
+			return ""
+		}
+	}
+	var claims struct {
+		Email            string `json:"email"`
+		PreferredUsername string `json:"preferred_username"`
+		Sub              string `json:"sub"`
+	}
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return ""
+	}
+	if claims.Email != "" {
+		return claims.Email
+	}
+	if claims.PreferredUsername != "" {
+		return claims.PreferredUsername
+	}
+	return claims.Sub
 }
 
 // GenerateAccountID generates an account ID

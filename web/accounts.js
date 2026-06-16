@@ -773,6 +773,9 @@ let testModalRunning = false;
     builderid: 'fa-solid fa-id-card',
     iam: 'fa-solid fa-key',
     sso: 'fa-solid fa-shield-halved',
+    social: 'fa-brands fa-google',
+    kirocli: 'fa-solid fa-database',
+    ssocache: 'fa-solid fa-folder-tree',
     local: 'fa-solid fa-folder-open',
     credentials: 'fa-solid fa-code',
     cookie: 'fa-solid fa-cookie-bite'
@@ -796,6 +799,9 @@ let testModalRunning = false;
     else if (type === 'builderid') modalBuilderId(title, body);
     else if (type === 'iam') modalIam(title, body);
     else if (type === 'sso') modalSso(title, body);
+    else if (type === 'social') modalSocial(title, body);
+    else if (type === 'kirocli') modalKiroCli(title, body);
+    else if (type === 'ssocache') modalSSOCache(title, body);
     else if (type === 'local') modalLocal(title, body);
     else if (type === 'credentials') modalCredentials(title, body);
     else if (type === 'cookie') modalCookie(title, body);
@@ -807,6 +813,8 @@ let testModalRunning = false;
     iamSession = '';
     if (builderIdPollTimer) { clearTimeout(builderIdPollTimer); builderIdPollTimer = null; }
     builderIdSession = '';
+    if (socialPollTimer) { clearTimeout(socialPollTimer); socialPollTimer = null; }
+    socialDeviceCode = '';
   }
   function modalAdd(title, body) {
     title.textContent = t('modal.addAccount');
@@ -815,6 +823,9 @@ let testModalRunning = false;
       methodCard('builderid', t('modal.builderIdTitle'), t('modal.builderIdDesc')) +
       methodCard('iam', t('modal.iamTitle'), t('modal.iamDesc')) +
       methodCard('sso', t('modal.ssoTitle'), t('modal.ssoDesc')) +
+      methodCard('social', t('modal.socialTitle'), t('modal.socialDesc')) +
+      methodCard('kirocli', t('modal.kirocliTitle'), t('modal.kirocliDesc')) +
+      methodCard('ssocache', t('modal.ssocacheTitle'), t('modal.ssocacheDesc')) +
       methodCard('local', t('modal.localTitle'), t('modal.localDesc')) +
       methodCard('credentials', t('modal.credentialsTitle'), t('modal.credentialsDesc')) +
       methodCard('cookie', t('modal.cookieTitle'), t('modal.cookieDesc')) +
@@ -888,6 +899,71 @@ let testModalRunning = false;
       '<button class="btn btn-primary" id="importSsoBtn" type="button">' + escapeHtml(t('common.add')) + '</button>' +
       '</div>';
     $('importSsoBtn').addEventListener('click', importSsoToken);
+  }
+
+  function modalSocial(title, body) {
+    title.textContent = t('modal.socialTitle');
+    body.innerHTML =
+      '<p class="help-block">' + escapeHtml(t('modal.socialDesc')) + '</p>' +
+      '<div id="socialStep1">' +
+      '<div class="form-group"><label>' + escapeHtml(t('social.provider')) + '</label>' +
+      '<select id="socialProvider">' +
+      '<option value="google">' + escapeHtml(t('local.providerGoogle')) + '</option>' +
+      '<option value="github">' + escapeHtml(t('local.providerGithub')) + '</option>' +
+      '</select></div>' +
+      '<div class="modal-footer">' +
+      '<button class="btn btn-secondary" data-modal-goto="add" type="button">' + escapeHtml(t('common.back')) + '</button>' +
+      '<button class="btn btn-primary" id="startSocialBtn" type="button">' + escapeHtml(t('builderid.startLogin')) + '</button>' +
+      '</div>' +
+      '</div>' +
+      '<div id="socialStep2" class="hidden">' +
+      '<div class="message message-info message-center"><p class="builder-code" id="socialUserCode"></p><p class="text-xs mt-2">' + escapeHtml(t('social.instructions')) + '</p></div>' +
+      '<div class="form-group mt-4"><label>' + escapeHtml(t('builderid.verifyUrl')) + '</label>' +
+      '<div class="endpoint"><span id="socialVerifyUrl" class="font-mono text-xs"></span></div>' +
+      '<div class="flex gap-2 mt-2">' +
+      '<button class="btn btn-sm btn-outline flex-1" id="socialOpenBtn" type="button">' + escapeHtml(t('builderid.open')) + '</button>' +
+      '<button class="btn btn-sm btn-outline flex-1" id="socialCopyBtn" type="button">' + escapeHtml(t('common.copy')) + '</button>' +
+      '</div>' +
+      '</div>' +
+      '<p id="socialStatus" class="text-center text-sm mt-4 muted-text">' + escapeHtml(t('builderid.waiting')) + '</p>' +
+      '<div class="modal-footer"><button class="btn btn-secondary" id="socialCancelBtn" type="button">' + escapeHtml(t('common.cancel')) + '</button></div>' +
+      '</div>';
+    $('startSocialBtn').addEventListener('click', startSocialLogin);
+  }
+
+  function modalKiroCli(title, body) {
+    title.textContent = t('modal.kirocliTitle');
+    body.innerHTML =
+      '<p class="help-block">' + escapeHtml(t('modal.kirocliDesc')) + '</p>' +
+      '<div class="help-block">' +
+      '<p><b>' + escapeHtml(t('kirocli.fileLocation')) + '</b></p>' +
+      '<p>' + escapeHtml(t('kirocli.linux')) + ': <code class="code-inline">~/.local/share/kiro-cli/data.sqlite3</code></p>' +
+      '<p>' + escapeHtml(t('kirocli.windows')) + ': <code class="code-inline">%APPDATA%\\kiro\\storage.db</code></p>' +
+      '</div>' +
+      '<p class="message message-info">' + escapeHtml(t('kirocli.hint')) + '</p>' +
+      '<div class="modal-footer">' +
+      '<button class="btn btn-secondary" data-modal-goto="add" type="button">' + escapeHtml(t('common.back')) + '</button>' +
+      '<button class="btn btn-primary" id="importKiroCliBtn" type="button">' + escapeHtml(t('common.import')) + '</button>' +
+      '</div>';
+    $('importKiroCliBtn').addEventListener('click', importKiroCli);
+  }
+
+  function modalSSOCache(title, body) {
+    title.textContent = t('modal.ssocacheTitle');
+    body.innerHTML =
+      '<p class="help-block">' + escapeHtml(t('modal.ssocacheDesc')) + '</p>' +
+      '<div class="help-block">' +
+      '<p><b>' + escapeHtml(t('kirocli.fileLocation')) + '</b></p>' +
+      '<p>' + escapeHtml(t('local.macosLinux')) + ': <code class="code-inline">~/.aws/sso/cache/</code></p>' +
+      '<p>' + escapeHtml(t('local.windows')) + ': <code class="code-inline">%USERPROFILE%\\.aws\\sso\\cache\\</code></p>' +
+      '</div>' +
+      '<div class="form-group"><label>' + escapeHtml(t('detail.region')) + '</label><input type="text" id="ssocacheRegion" value="us-east-1" /></div>' +
+      '<p class="message message-info">' + escapeHtml(t('ssocache.hint')) + '</p>' +
+      '<div class="modal-footer">' +
+      '<button class="btn btn-secondary" data-modal-goto="add" type="button">' + escapeHtml(t('common.back')) + '</button>' +
+      '<button class="btn btn-primary" id="importSSOCacheBtn" type="button">' + escapeHtml(t('common.import')) + '</button>' +
+      '</div>';
+    $('importSSOCacheBtn').addEventListener('click', importSSOCache);
   }
 
   function modalLocal(title, body) {
@@ -1140,6 +1216,69 @@ let testModalRunning = false;
       toastPrimary(msg, { duration: 5200 });
       if (d.accounts) d.accounts.forEach(a => autoRefreshNewAccount(a.id));
     } else toastError(t('common.failed') + ': ' + (d.error || ''));
+  }
+  var socialPollTimer = null;
+  var socialDeviceCode = '';
+  async function importKiroCli() {
+    const res = await api('/auth/kiro-cli', { method: 'POST' });
+    const d = await res.json();
+    if (d.success) {
+      closeModal(); loadAccounts(); loadStats();
+      toastPrimary(t('kirocli.importSuccess') + ': ' + (d.account?.email || d.account?.id));
+      autoRefreshNewAccount(d.account?.id);
+    } else toastError(t('common.failed') + ': ' + (d.error || ''));
+  }
+  async function importSSOCache() {
+    const region = ($('ssocacheRegion') && $('ssocacheRegion').value) || 'us-east-1';
+    const res = await api('/auth/sso-cache?region=' + encodeURIComponent(region), { method: 'POST' });
+    const d = await res.json();
+    if (d.success) {
+      closeModal(); loadAccounts(); loadStats();
+      toastPrimary(t('ssocache.importSuccess') + ': ' + (d.account?.email || d.account?.id));
+      autoRefreshNewAccount(d.account?.id);
+    } else toastError(t('common.failed') + ': ' + (d.error || ''));
+  }
+  async function startSocialLogin() {
+    const provider = $('socialProvider').value;
+    const res = await api('/auth/social/start', { method: 'POST', body: JSON.stringify({ provider }) });
+    const d = await res.json();
+    if (d.authUrl) {
+      socialDeviceCode = d.deviceCode;
+      $('socialUserCode').textContent = d.userCode;
+      $('socialVerifyUrl').textContent = d.authUrl;
+      $('socialStep1').classList.add('hidden');
+      $('socialStep2').classList.remove('hidden');
+      $('socialOpenBtn').addEventListener('click', () => window.open($('socialVerifyUrl').textContent, '_blank'));
+      $('socialCopyBtn').addEventListener('click', async () => {
+        await copyText($('socialVerifyUrl').textContent);
+        toast(t('common.copied'), 'primary');
+      });
+      $('socialCancelBtn').addEventListener('click', cancelSocialLogin);
+      pollSocialAuth(d.interval || 5);
+    } else toastError(t('common.failed') + ': ' + (d.error || ''));
+  }
+  function pollSocialAuth(interval) {
+    socialPollTimer = setTimeout(async () => {
+      const res = await api('/auth/social/poll', { method: 'POST', body: JSON.stringify({ deviceCode: socialDeviceCode, provider: $('socialProvider').value }) });
+      const d = await res.json();
+      if (d.success) {
+        closeModal(); loadAccounts(); loadStats();
+        toastPrimary(t('builderid.success') + ': ' + (d.account?.email || d.account?.id));
+        autoRefreshNewAccount(d.account?.id);
+        socialDeviceCode = '';
+      } else if (d.pending) {
+        $('socialStatus').textContent = t('builderid.waiting');
+        pollSocialAuth(interval);
+      } else {
+        toastError(t('common.failed') + ': ' + (d.error || ''));
+        cancelSocialLogin();
+      }
+    }, interval * 1000);
+  }
+  function cancelSocialLogin() {
+    if (socialPollTimer) { clearTimeout(socialPollTimer); socialPollTimer = null; }
+    socialDeviceCode = '';
+    showModal('add');
   }
   async function startBuilderIdLogin() {
     const region = $('builderIdRegion').value || 'us-east-1';
