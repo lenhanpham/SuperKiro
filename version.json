@@ -1,5 +1,5 @@
 {
-  "version": "0.1.1",
-  "changelog": "Fixed several bugs and fixed multiple account bad credentials",
+  "version": "0.1.2",
+  "changelog": "Support more login methods using github, gmail, and others",
   "download": "https://github.com/lenhanpham/SuperKiro"
 }
