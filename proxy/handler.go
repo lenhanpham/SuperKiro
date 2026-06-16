@@ -714,7 +714,7 @@ func (h *Handler) refreshAllAccounts() {
 
 		// check if token needs refresh
 		if account.ExpiresAt > 0 && time.Now().Unix() > account.ExpiresAt-tokenRefreshSkewSeconds {
-			newAccessToken, newRefreshToken, newExpiresAt, profileArn, err := auth.RefreshToken(account)
+			newAccessToken, newRefreshToken, newExpiresAt, profileArn, newClientID, newClientSecret, err := auth.RefreshToken(account)
 			if err != nil {
 				logger.Warnf("[BackgroundRefresh] Token refresh failed for %s: %v", account.Email, err)
 				h.handleAccountFailure(account, err, "")
@@ -730,6 +730,12 @@ func (h *Handler) refreshAllAccounts() {
 			if profileArn != "" {
 				account.ProfileArn = profileArn
 				config.UpdateAccountProfileArn(account.ID, profileArn)
+			}
+			// Persist re-registered OIDC client credentials so next refresh cycle uses them.
+			if newClientID != "" && newClientSecret != "" {
+				account.ClientID = newClientID
+				account.ClientSecret = newClientSecret
+				config.UpdateAccount(account.ID, *account)
 			}
 		}
 
@@ -2571,7 +2577,7 @@ func (h *Handler) tryRefreshAndRetry(account *config.Account, payload *KiroPaylo
 		return false
 	}
 	logger.Warnf("[AuthRetry] Auth failure for %s, attempting token refresh + retry", account.Email)
-	newAccessToken, newRefreshToken, newExpiresAt, profileArn, refreshErr := auth.RefreshToken(account)
+	newAccessToken, newRefreshToken, newExpiresAt, profileArn, _, _, refreshErr := auth.RefreshToken(account)
 	if refreshErr != nil || newAccessToken == "" {
 		logger.Warnf("[AuthRetry] Token refresh failed for %s: %v", account.Email, refreshErr)
 		return false
@@ -2615,15 +2621,12 @@ func (h *Handler) ensureValidToken(account *config.Account) error {
 		}
 	}
 
-	accessToken, refreshToken, expiresAt, profileArn, err := auth.RefreshToken(account)
+	accessToken, refreshToken, expiresAt, profileArn, _, _, err := auth.RefreshToken(account)
 	if err != nil {
 		logger.Warnf("[TokenRefresh] Refresh failed for %s: %v", account.Email, err)
-		// Soft cooldown only — never disable. auth.RefreshToken already tried OIDC re-registration
-		// and social fallback. If all paths failed, a brief cooldown prevents tight loops while
-		// allowing the next request to retry. OmniRoute pattern: errors are transient.
-		if !IsUnrecoverableRefreshError(err) {
-			h.handleAccountFailure(account, err, "")
-		}
+		// Soft cooldown only — never disable. auth.RefreshToken already tried
+		// OIDC re-registration + social fallback. Brief cooldown, next retries.
+		h.handleAccountFailure(account, err, "")
 		return err
 	}
 
@@ -4568,7 +4571,7 @@ func (h *Handler) apiBatchAccounts(w http.ResponseWriter, r *http.Request) {
 			}
 			// refresh token
 			if account.RefreshToken != "" {
-				if newAccess, newRefresh, newExpires, profileArn, err := auth.RefreshToken(account); err == nil {
+				if newAccess, newRefresh, newExpires, profileArn, _, _, err := auth.RefreshToken(account); err == nil {
 					account.AccessToken = newAccess
 					if newRefresh != "" {
 						account.RefreshToken = newRefresh
@@ -4988,7 +4991,7 @@ func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
 		AuthMethod:   "idc",
 		Region:       region,
 	}
-	newAccessToken, newRefreshToken, expiresAt, profileArn, err := auth.RefreshToken(tempAccount)
+	newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err := auth.RefreshToken(tempAccount)
 	if err != nil {
 		// Fall back to social refresh path (no clientId/clientSecret needed).
 		tempAccount2 := &config.Account{
@@ -4996,7 +4999,7 @@ func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
 			AuthMethod:   "social",
 			Region:       region,
 		}
-		newAccessToken, newRefreshToken, expiresAt, profileArn, err = auth.RefreshToken(tempAccount2)
+		newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err = auth.RefreshToken(tempAccount2)
 		if err != nil {
 			w.WriteHeader(400)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + err.Error()})
@@ -5067,7 +5070,7 @@ func (h *Handler) apiRegisterKiroCli(w http.ResponseWriter, r *http.Request) {
 		AuthMethod:   "social",
 		Region:       region,
 	}
-	newAccessToken, newRefreshToken, expiresAt, profileArn, err := auth.RefreshToken(tempAccount)
+	newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err := auth.RefreshToken(tempAccount)
 	if err != nil {
 		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + err.Error()})
@@ -5228,7 +5231,7 @@ func (h *Handler) apiImportCredentials(w http.ResponseWriter, r *http.Request) {
 		AuthMethod:   req.AuthMethod,
 		Region:       req.Region,
 	}
-	accessToken, newRefreshToken, expiresAt, newProfileArn, err := auth.RefreshToken(tempAccount)
+	accessToken, newRefreshToken, expiresAt, newProfileArn, _, _, err := auth.RefreshToken(tempAccount)
 	if err != nil {
 		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + err.Error()})
@@ -5491,7 +5494,7 @@ func (h *Handler) apiRefreshAccount(w http.ResponseWriter, r *http.Request, id s
 		if account.RefreshToken == "" {
 			return nil
 		}
-		newAccessToken, newRefreshToken, newExpiresAt, profileArn, err := auth.RefreshToken(account)
+		newAccessToken, newRefreshToken, newExpiresAt, profileArn, _, _, err := auth.RefreshToken(account)
 		if err != nil {
 			return err
 		}

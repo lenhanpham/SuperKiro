@@ -230,7 +230,10 @@ func DiscoverProfileArn(accessToken, region string) string {
 
 // RefreshToken refreshes the access token
 // Returns: accessToken, refreshToken, expiresAt, profileArn, error
-func RefreshToken(account *config.Account) (string, string, int64, string, error) {
+// RefreshToken refreshes the access token.
+// Returns: accessToken, refreshToken, expiresAt, profileArn, newClientID, newClientSecret, error.
+// newClientID/newClientSecret are set when the OIDC client was re-registered during refresh.
+func RefreshToken(account *config.Account) (string, string, int64, string, string, string, error) {
 	// Resolve per-account proxy: account.ProxyURL > global config
 	proxyURL := account.ProxyURL
 	if proxyURL == "" {
@@ -239,7 +242,8 @@ func RefreshToken(account *config.Account) (string, string, int64, string, error
 	client := GetAuthClientForProxy(proxyURL)
 
 	if account.AuthMethod == "social" {
-		return refreshSocialToken(account.RefreshToken, client)
+		at, rt, exp, pa, err := refreshSocialToken(account.RefreshToken, client)
+		return at, rt, exp, pa, "", "", err
 	}
 
 	// OIDC refresh first (Builder ID / IDC).
@@ -247,7 +251,7 @@ func RefreshToken(account *config.Account) (string, string, int64, string, error
 		account.RefreshToken, account.ClientID, account.ClientSecret, account.Region, client,
 	)
 	if err == nil {
-		return accessToken, refreshToken, expiresAt, profileArn, nil
+		return accessToken, refreshToken, expiresAt, profileArn, "", "", nil
 	}
 
 	// OIDC refresh failed. Try re-registering the OIDC client (client credentials
@@ -262,7 +266,7 @@ func RefreshToken(account *config.Account) (string, string, int64, string, error
 			account.RefreshToken, newClientID, newClientSecret, region, client,
 		)
 		if err == nil {
-			return accessToken, refreshToken, expiresAt, profileArn, nil
+			return accessToken, refreshToken, expiresAt, profileArn, newClientID, newClientSecret, nil
 		}
 	}
 
@@ -270,10 +274,10 @@ func RefreshToken(account *config.Account) (string, string, int64, string, error
 	// for any valid refresh token regardless of auth method (OmniRoute pattern).
 	socAT, socRT, socExp, socProfile, socErr := refreshSocialToken(account.RefreshToken, client)
 	if socErr == nil && socAT != "" {
-		return socAT, socRT, socExp, socProfile, nil
+		return socAT, socRT, socExp, socProfile, "", "", nil
 	}
 
-	return "", "", 0, "", err
+	return "", "", 0, "", "", "", err
 }
 
 // registerOIDCClientInternal registers a new OIDC client pair with AWS SSO.
