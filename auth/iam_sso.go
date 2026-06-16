@@ -149,7 +149,7 @@ func CompleteIamSsoLogin(sessionID, callbackUrl string) (accessToken, refreshTok
 		return "", "", "", "", "", 0, "", err
 	}
 
-	// Discover profileArn via ListAvailableProfiles (mirrors OmniRoute postExchange).
+	// Discover profileArn via ListAvailableProfiles.
 	if accessToken != "" {
 		profileArn = DiscoverProfileArn(accessToken, session.Region)
 	}

@@ -133,7 +133,7 @@ func ResolveProfileArn(account *config.Account) (string, error) {
 
 	// Fallback: refresh token to get profileArn from auth response
 	if account.RefreshToken != "" {
-		_, _, _, refreshedArn, _, _, refreshErr := auth.RefreshToken(account)
+		_, _, _, refreshedArn, _, _, refreshErr := auth.RefreshAccountToken(account)
 		if refreshErr == nil && refreshedArn != "" {
 			if updateErr := config.UpdateAccountProfileArn(account.ID, refreshedArn); updateErr != nil {
 				logger.Warnf("[ProfileArn] Failed to cache profile ARN for %s: %v", account.Email, updateErr)

@@ -193,7 +193,7 @@ func PollBuilderIdAuth(sessionID string) (accessToken, refreshToken, clientID, c
 			return "", "", "", "", "", 0, "", "", fmt.Errorf("parse token response failed: %v", err)
 		}
 
-		// Discover profileArn via ListAvailableProfiles (mirrors OmniRoute postExchange).
+		// Discover profileArn via ListAvailableProfiles.
 		profileArn = DiscoverProfileArn(tokenResult.AccessToken, session.Region)
 
 		// clean up session

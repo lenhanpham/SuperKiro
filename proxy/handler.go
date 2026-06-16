@@ -21,7 +21,7 @@ import (
 )
 
 // Proactive refresh buffer: refresh token when within 5 minutes of expiry.
-// Matches OmniRoute/9router's REFRESH_LEAD_MS[kiro] = 5 * 60 * 1000.
+// REFRESH_LEAD_MS[kiro] = 5 * 60 * 1000.
 // This ensures tokens are refreshed BEFORE they expire, preventing 403 errors.
 const tokenRefreshSkewSeconds int64 = 300
 
@@ -711,13 +711,15 @@ func (h *Handler) refreshAllAccounts() {
 	accounts := config.GetAccounts()
 	for i := range accounts {
 		account := &accounts[i]
-		if !account.Enabled || account.AccessToken == "" {
+		// Skip accounts with no access token (not yet authenticated).
+		// Retry banned/disabled accounts — they may recover after re-registration.
+		if account.AccessToken == "" {
 			continue
 		}
 
 		// check if token needs refresh
 		if account.ExpiresAt > 0 && time.Now().Unix() > account.ExpiresAt-tokenRefreshSkewSeconds {
-			newAccessToken, newRefreshToken, newExpiresAt, profileArn, newClientID, newClientSecret, err := auth.RefreshToken(account)
+			newAccessToken, newRefreshToken, newExpiresAt, profileArn, newClientID, newClientSecret, err := auth.RefreshAccountToken(account)
 			if err != nil {
 				logger.Warnf("[BackgroundRefresh] Token refresh failed for %s: %v", account.Email, err)
 				h.handleAccountFailure(account, err, "")
@@ -740,17 +742,27 @@ func (h *Handler) refreshAllAccounts() {
 				account.ClientSecret = newClientSecret
 				config.UpdateAccount(account.ID, *account)
 			}
+			// Re-enable banned/disabled account if refresh succeeded.
+			if account.BanStatus != "" && account.BanStatus != "ACTIVE" {
+				account.BanStatus = "ACTIVE"
+				account.BanReason = ""
+				account.BanTime = 0
+				account.Enabled = true
+				config.UpdateAccount(account.ID, *account)
+				logger.Infof("[BackgroundRefresh] Re-enabled %s after successful refresh", account.Email)
+			}
 		}
 
-		// refresh account info
-		info, err := RefreshAccountInfo(account)
-		if err != nil {
-			logger.Warnf("[BackgroundRefresh] Failed to refresh %s: %v", account.Email, err)
-			continue
+		// refresh account info (skip if banned — the quota check itself causes 403)
+		if account.BanStatus == "" || account.BanStatus == "ACTIVE" {
+			info, err := RefreshAccountInfo(account)
+			if err != nil {
+				logger.Warnf("[BackgroundRefresh] Failed to refresh %s: %v", account.Email, err)
+				continue
+			}
+			config.UpdateAccountInfo(account.ID, *info)
+			logger.Infof("[BackgroundRefresh] Refreshed %s: %s %.1f/%.1f", account.Email, info.SubscriptionType, info.UsageCurrent, info.UsageLimit)
 		}
-
-		config.UpdateAccountInfo(account.ID, *info)
-		logger.Infof("[BackgroundRefresh] Refreshed %s: %s %.1f/%.1f", account.Email, info.SubscriptionType, info.UsageCurrent, info.UsageLimit)
 	}
 	h.pool.Reload()
 }
@@ -2580,7 +2592,7 @@ func (h *Handler) tryRefreshAndRetry(account *config.Account, payload *KiroPaylo
 		return false
 	}
 	logger.Warnf("[AuthRetry] Auth failure for %s, attempting token refresh + retry", account.Email)
-	newAccessToken, newRefreshToken, newExpiresAt, profileArn, _, _, refreshErr := auth.RefreshToken(account)
+	newAccessToken, newRefreshToken, newExpiresAt, profileArn, _, _, refreshErr := auth.RefreshAccountToken(account)
 	if refreshErr != nil || newAccessToken == "" {
 		logger.Warnf("[AuthRetry] Token refresh failed for %s: %v", account.Email, refreshErr)
 		return false
@@ -2624,14 +2636,44 @@ func (h *Handler) ensureValidToken(account *config.Account) error {
 		}
 	}
 
-	accessToken, refreshToken, expiresAt, profileArn, _, _, err := auth.RefreshToken(account)
+	// Check rotation map first: if a sibling already refreshed and rotated this
+	// token, use the cached new tokens instead of hitting upstream.
+	var accessToken, refreshToken, profileArn string
+	var expiresAt int64
+	var err error
+
+	if rot := auth.CheckRotation(account.RefreshToken); rot != nil {
+		logger.Infof("[TokenRefresh] %s token was rotated by sibling — using cached", account.Email)
+		accessToken = rot.AccessToken
+		refreshToken = rot.RefreshToken
+		expiresAt = rot.ExpiresAt
+		profileArn = rot.ProfileArn
+		err = nil
+	} else {
+		accessToken, refreshToken, expiresAt, profileArn, _, _, err = auth.RefreshAccountToken(account)
+	}
+
 	if err != nil {
 		logger.Warnf("[TokenRefresh] Refresh failed for %s: %v", account.Email, err)
-		// Soft cooldown only — never disable. auth.RefreshToken already tried
-		// OIDC re-registration + social fallback. Brief cooldown, next retries.
+		// Stale token retry: if the account's refresh token was already rotated
+		// by a sibling account's refresh,
+		// the 401 is expected — the account is actually healthy with a newer token.
+		// Re-read from pool to check.
+		if latest := h.pool.GetByID(account.ID); latest != nil && latest.RefreshToken != account.RefreshToken {
+			logger.Infof("[TokenRefresh] %s refresh token already rotated by sibling — reusing", account.Email)
+			account.AccessToken = latest.AccessToken
+			account.RefreshToken = latest.RefreshToken
+			account.ExpiresAt = latest.ExpiresAt
+			if account.ExpiresAt > 0 && time.Now().Unix() < account.ExpiresAt-tokenRefreshSkewSeconds {
+				return nil
+			}
+		}
 		h.handleAccountFailure(account, err, "")
 		return err
 	}
+
+	// Record rotation so siblings don't hit upstream with stale tokens.
+	auth.RecordRotation(account.RefreshToken, accessToken, refreshToken, profileArn, expiresAt)
 
 	// update memory
 	h.pool.UpdateToken(account.ID, accessToken, refreshToken, expiresAt)
@@ -4574,7 +4616,7 @@ func (h *Handler) apiBatchAccounts(w http.ResponseWriter, r *http.Request) {
 			}
 			// refresh token
 			if account.RefreshToken != "" {
-				if newAccess, newRefresh, newExpires, profileArn, _, _, err := auth.RefreshToken(account); err == nil {
+				if newAccess, newRefresh, newExpires, profileArn, _, _, err := auth.RefreshAccountToken(account); err == nil {
 					account.AccessToken = newAccess
 					if newRefresh != "" {
 						account.RefreshToken = newRefresh
@@ -4994,7 +5036,7 @@ func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
 		AuthMethod:   "idc",
 		Region:       region,
 	}
-	newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err := auth.RefreshToken(tempAccount)
+	newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err := auth.RefreshAccountToken(tempAccount)
 	if err != nil {
 		// Fall back to social refresh path (no clientId/clientSecret needed).
 		tempAccount2 := &config.Account{
@@ -5002,7 +5044,7 @@ func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
 			AuthMethod:   "social",
 			Region:       region,
 		}
-		newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err = auth.RefreshToken(tempAccount2)
+		newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err = auth.RefreshAccountToken(tempAccount2)
 		if err != nil {
 			w.WriteHeader(400)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + err.Error()})
@@ -5073,7 +5115,7 @@ func (h *Handler) apiRegisterKiroCli(w http.ResponseWriter, r *http.Request) {
 		AuthMethod:   "social",
 		Region:       region,
 	}
-	newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err := auth.RefreshToken(tempAccount)
+	newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err := auth.RefreshAccountToken(tempAccount)
 	if err != nil {
 		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + err.Error()})
@@ -5234,7 +5276,7 @@ func (h *Handler) apiImportCredentials(w http.ResponseWriter, r *http.Request) {
 		AuthMethod:   req.AuthMethod,
 		Region:       req.Region,
 	}
-	accessToken, newRefreshToken, expiresAt, newProfileArn, _, _, err := auth.RefreshToken(tempAccount)
+	accessToken, newRefreshToken, expiresAt, newProfileArn, _, _, err := auth.RefreshAccountToken(tempAccount)
 	if err != nil {
 		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + err.Error()})
@@ -5497,7 +5539,7 @@ func (h *Handler) apiRefreshAccount(w http.ResponseWriter, r *http.Request, id s
 		if account.RefreshToken == "" {
 			return nil
 		}
-		newAccessToken, newRefreshToken, newExpiresAt, profileArn, _, _, err := auth.RefreshToken(account)
+		newAccessToken, newRefreshToken, newExpiresAt, profileArn, _, _, err := auth.RefreshAccountToken(account)
 		if err != nil {
 			return err
 		}

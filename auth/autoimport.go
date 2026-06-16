@@ -32,7 +32,7 @@ func ImportKiroCli() (*KiroCliCredentials, error) {
 		return nil, fmt.Errorf("home dir: %w", err)
 	}
 
-	// Candidates from OmniRoute: Linux/macOS SQLite, Windows SQLite
+	// Candidates: Linux/macOS SQLite, Windows SQLite
 	candidates := []string{
 		filepath.Join(home, ".local", "share", "kiro-cli", "data.sqlite3"),
 	}
@@ -65,7 +65,7 @@ func readKiroCliSQLite(dbPath string) (*KiroCliCredentials, error) {
 
 	// For a full SQLite parser we'd need CGO or a Go SQLite driver. Since SuperKiro
 	// doesn't bundle one, we use a pragmatic text-scan approach: kiro-cli stores
-	// JSON values as text blobs. Match the key-value patterns documented in OmniRoute.
+	// JSON values as text blobs.
 
 	creds := &KiroCliCredentials{}
 

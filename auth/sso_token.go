@@ -66,7 +66,7 @@ func ImportFromSsoToken(bearerToken, region string) (accessToken, refreshToken, 
 		return "", "", "", "", 0, "", fmt.Errorf("get token failed: %w", err)
 	}
 
-	// Discover profileArn via ListAvailableProfiles (mirrors OmniRoute postExchange).
+	// Discover profileArn via ListAvailableProfiles.
 	if accessToken != "" {
 		profileArn = DiscoverProfileArn(accessToken, region)
 	}

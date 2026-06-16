@@ -1,5 +1,5 @@
 {
-  "version": "0.1.2",
-  "changelog": "Support more login methods using github, gmail, and others",
+  "version": "0.1.3",
+  "changelog": "Serialization and refresh token rotation ensure Kiro accounts hopefully will not get expired anymore",
   "download": "https://github.com/lenhanpham/SuperKiro"
 }

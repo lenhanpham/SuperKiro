@@ -161,7 +161,6 @@ func PollSocialLogin(deviceCode, provider string) (accessToken, refreshToken, pr
 // account by calling ListAvailableProfiles on the region-matched Amazon Q endpoint. Prefers a
 // profile whose ARN contains the token's region, then falls back to the first profile returned.
 // Builder ID accounts legitimately have none and return "" without error.
-// Mirrors OmniRoute's postExchange pattern exactly.
 func DiscoverProfileArn(accessToken, region string) string {
 	if accessToken == "" {
 		return ""
@@ -210,7 +209,7 @@ func DiscoverProfileArn(accessToken, region string) string {
 		return ""
 	}
 
-	// Prefer region-matched profile (OmniRoute pattern).
+	// Prefer region-matched profile.
 	normalizedRegion := strings.ToLower(region)
 	var fallback string
 	for _, profile := range result.Profiles {
@@ -249,7 +248,7 @@ func RefreshToken(account *config.Account) (string, string, int64, string, strin
 		}
 		// Social refresh failed. For Google social tokens, the kiro.dev refresh
 		// endpoint may not accept them. Try OIDC refresh with a freshly registered
-		// client (same fallback OmniRoute uses for OIDC accounts).
+		// client (same fallback uses for OIDC accounts).
 		region := account.Region
 		if region == "" {
 			region = "us-east-1"
@@ -275,7 +274,7 @@ func RefreshToken(account *config.Account) (string, string, int64, string, strin
 	}
 
 	// OIDC refresh failed. Try re-registering the OIDC client (client credentials
-	// may have expired) and retry once, mirroring OmniRoute's pattern.
+	// may have expired) and retry once.
 	region := account.Region
 	if region == "" {
 		region = "us-east-1"
@@ -291,7 +290,7 @@ func RefreshToken(account *config.Account) (string, string, int64, string, strin
 	}
 
 	// Final fallback: try social refresh endpoint. Kiro.dev social refresh works
-	// for any valid refresh token regardless of auth method (OmniRoute pattern).
+	// for any valid refresh token regardless of auth method.
 	socAT, socRT, socExp, socProfile, socErr := refreshSocialToken(account.RefreshToken, client)
 	if socErr == nil && socAT != "" {
 		return socAT, socRT, socExp, socProfile, "", "", nil
@@ -398,7 +397,6 @@ func refreshSocialToken(refreshToken string, client *http.Client) (string, strin
 
 	payload := map[string]string{
 		"refreshToken": refreshToken,
-		"clientId":     "kiro-cli",
 	}
 
 	body, _ := json.Marshal(payload)
