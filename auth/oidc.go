@@ -241,7 +241,83 @@ func RefreshToken(account *config.Account) (string, string, int64, string, error
 	if account.AuthMethod == "social" {
 		return refreshSocialToken(account.RefreshToken, client)
 	}
-	return refreshOIDCToken(account.RefreshToken, account.ClientID, account.ClientSecret, account.Region, client)
+
+	// OIDC refresh first (Builder ID / IDC).
+	accessToken, refreshToken, expiresAt, profileArn, err := refreshOIDCToken(
+		account.RefreshToken, account.ClientID, account.ClientSecret, account.Region, client,
+	)
+	if err == nil {
+		return accessToken, refreshToken, expiresAt, profileArn, nil
+	}
+
+	// OIDC refresh failed. Try re-registering the OIDC client (client credentials
+	// may have expired) and retry once, mirroring OmniRoute's pattern.
+	region := account.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+	newClientID, newClientSecret, regErr := registerOIDCClientInternal(region)
+	if regErr == nil && newClientID != "" {
+		accessToken, refreshToken, expiresAt, profileArn, err = refreshOIDCToken(
+			account.RefreshToken, newClientID, newClientSecret, region, client,
+		)
+		if err == nil {
+			return accessToken, refreshToken, expiresAt, profileArn, nil
+		}
+	}
+
+	// Final fallback: try social refresh endpoint. Kiro.dev social refresh works
+	// for any valid refresh token regardless of auth method (OmniRoute pattern).
+	socAT, socRT, socExp, socProfile, socErr := refreshSocialToken(account.RefreshToken, client)
+	if socErr == nil && socAT != "" {
+		return socAT, socRT, socExp, socProfile, nil
+	}
+
+	return "", "", 0, "", err
+}
+
+// registerOIDCClientInternal registers a new OIDC client pair with AWS SSO.
+func registerOIDCClientInternal(region string) (clientID, clientSecret string, err error) {
+	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", region)
+	startUrl := "https://view.awsapps.com/start"
+	scopes := []string{
+		"codewhisperer:completions",
+		"codewhisperer:analysis",
+		"codewhisperer:conversations",
+		"codewhisperer:transformations",
+		"codewhisperer:taskassist",
+	}
+	payload := map[string]interface{}{
+		"clientName": "Kiro",
+		"clientType": "public",
+		"scopes":     scopes,
+		"grantTypes": []string{"urn:ietf:params:oauth:grant-type:device_code", "refresh_token"},
+		"issuerUrl":  startUrl,
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", oidcBase+"/client/register", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := httpClient()
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("register client failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", "", fmt.Errorf("register client failed: %d %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		ClientID     string `json:"clientId"`
+		ClientSecret string `json:"clientSecret"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", fmt.Errorf("parse register response: %w", err)
+	}
+	return result.ClientID, result.ClientSecret, nil
 }
 
 // refreshOIDCToken refreshes IdC/Builder ID token

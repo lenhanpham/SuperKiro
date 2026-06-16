@@ -717,12 +717,7 @@ func (h *Handler) refreshAllAccounts() {
 			newAccessToken, newRefreshToken, newExpiresAt, profileArn, err := auth.RefreshToken(account)
 			if err != nil {
 				logger.Warnf("[BackgroundRefresh] Token refresh failed for %s: %v", account.Email, err)
-				if IsUnrecoverableRefreshError(err) {
-					// Permanent failure — disable so it never wastes refresh attempts
-					h.pool.DisableAccount(account.ID, fmt.Sprintf("Bad credentials: %s", err.Error()))
-				} else {
-					h.handleAccountFailure(account, err, "")
-				}
+				h.handleAccountFailure(account, err, "")
 				continue
 			}
 			account.AccessToken = newAccessToken
@@ -2622,10 +2617,12 @@ func (h *Handler) ensureValidToken(account *config.Account) error {
 
 	accessToken, refreshToken, expiresAt, profileArn, err := auth.RefreshToken(account)
 	if err != nil {
-		// Permanent token refresh failure → disable account so it never retries
-		if IsUnrecoverableRefreshError(err) {
-			logger.Warnf("[TokenRefresh] Permanent refresh failure for %s: %v — disabling", account.Email, err)
-			h.pool.DisableAccount(account.ID, fmt.Sprintf("Bad credentials: %s", err.Error()))
+		logger.Warnf("[TokenRefresh] Refresh failed for %s: %v", account.Email, err)
+		// Soft cooldown only — never disable. auth.RefreshToken already tried OIDC re-registration
+		// and social fallback. If all paths failed, a brief cooldown prevents tight loops while
+		// allowing the next request to retry. OmniRoute pattern: errors are transient.
+		if !IsUnrecoverableRefreshError(err) {
+			h.handleAccountFailure(account, err, "")
 		}
 		return err
 	}
