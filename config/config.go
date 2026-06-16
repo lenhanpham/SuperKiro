@@ -242,8 +242,8 @@ type AccountInfo struct {
 	TrialExpiresAt    int64
 }
 
-// Version current version
-const Version = "0.1.1"
+// Version current version. Loaded from version.json at startup via init().
+var Version string
 
 var (
 	cfg     *Config
@@ -256,6 +256,23 @@ var (
 func Init(path string) error {
 	cfgPath = path
 	return Load()
+}
+
+// init auto-loads version from version.json in the working directory.
+func init() {
+	data, err := os.ReadFile("version.json")
+	if err != nil {
+		return
+	}
+	var v struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		return
+	}
+	if v.Version != "" {
+		Version = v.Version
+	}
 }
 
 func Load() error {

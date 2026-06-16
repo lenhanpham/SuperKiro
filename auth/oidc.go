@@ -7,6 +7,7 @@ import (
 	"io"
 	"superkiro/config"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -18,6 +19,77 @@ var oidcTokenURL = func(region string) string {
 // socialTokenURL builds the social refresh endpoint. Replacable in tests.
 var socialTokenURL = func() string {
 	return "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken"
+}
+
+// DiscoverProfileArn discovers the CodeWhisperer/Kiro profile ARN for a newly-authenticated
+// account by calling ListAvailableProfiles on the region-matched Amazon Q endpoint. Prefers a
+// profile whose ARN contains the token's region, then falls back to the first profile returned.
+// Builder ID accounts legitimately have none and return "" without error.
+// Mirrors OmniRoute's postExchange pattern exactly.
+func DiscoverProfileArn(accessToken, region string) string {
+	if accessToken == "" {
+		return ""
+	}
+	if region == "" {
+		region = "us-east-1"
+	}
+	region = strings.ToLower(region)
+
+	var runtimeHost string
+	if region == "us-east-1" {
+		runtimeHost = "https://codewhisperer.us-east-1.amazonaws.com"
+	} else {
+		runtimeHost = fmt.Sprintf("https://q.%s.amazonaws.com", region)
+	}
+
+	payload := map[string]int{"maxResults": 10}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", runtimeHost+"/ListAvailableProfiles", bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
+	req.Header.Set("x-amz-target", "AmazonCodeWhispererService.ListAvailableProfiles")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	client := httpClient()
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return ""
+	}
+
+	var result struct {
+		Profiles []struct {
+			Arn string `json:"arn"`
+		} `json:"profiles"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ""
+	}
+
+	// Prefer region-matched profile (OmniRoute pattern).
+	normalizedRegion := strings.ToLower(region)
+	var fallback string
+	for _, profile := range result.Profiles {
+		arn := strings.TrimSpace(profile.Arn)
+		if arn == "" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(arn), ":"+normalizedRegion+":") {
+			return arn
+		}
+		if fallback == "" {
+			fallback = arn
+		}
+	}
+	return fallback
 }
 
 // RefreshToken refreshes the access token

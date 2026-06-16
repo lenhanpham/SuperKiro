@@ -4639,7 +4639,7 @@ func (h *Handler) apiCompleteIamSso(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, refreshToken, clientID, clientSecret, region, expiresIn, err := auth.CompleteIamSsoLogin(req.SessionID, req.CallbackUrl)
+	accessToken, refreshToken, clientID, clientSecret, region, expiresIn, profileArn, err := auth.CompleteIamSsoLogin(req.SessionID, req.CallbackUrl)
 	if err != nil {
 		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -4662,6 +4662,7 @@ func (h *Handler) apiCompleteIamSso(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:    time.Now().Unix() + int64(expiresIn),
 		Enabled:      true,
 		MachineId:    config.GenerateMachineId(),
+		ProfileArn:   profileArn,
 	}
 
 	if err := config.AddAccount(account); err != nil {
@@ -4711,7 +4712,7 @@ func (h *Handler) apiPollBuilderIdAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, refreshToken, clientID, clientSecret, region, expiresIn, status, err := auth.PollBuilderIdAuth(req.SessionID)
+	accessToken, refreshToken, clientID, clientSecret, region, expiresIn, profileArn, status, err := auth.PollBuilderIdAuth(req.SessionID)
 	if err != nil {
 		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -4720,6 +4721,10 @@ func (h *Handler) apiPollBuilderIdAuth(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	// Declared here (from PollBuilderIdAuth) but only used in the completed branch below.
+	// Suppress the Go unused-variable warning for the early-return (pending) path.
+	_ = profileArn
 
 	if status == "pending" || status == "slow_down" {
 		// get current interval
@@ -4800,7 +4805,7 @@ func (h *Handler) apiImportSsoToken(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		accessToken, refreshToken, clientID, clientSecret, expiresIn, err := auth.ImportFromSsoToken(token, req.Region)
+		accessToken, refreshToken, clientID, clientSecret, expiresIn, profileArn, err := auth.ImportFromSsoToken(token, req.Region)
 		if err != nil {
 			errors = append(errors, err.Error())
 			continue
@@ -4822,6 +4827,7 @@ func (h *Handler) apiImportSsoToken(w http.ResponseWriter, r *http.Request) {
 			ExpiresAt:    time.Now().Unix() + int64(expiresIn),
 			Enabled:      true,
 			MachineId:    config.GenerateMachineId(),
+			ProfileArn:   profileArn,
 		}
 
 		if err := config.AddAccount(account); err != nil {

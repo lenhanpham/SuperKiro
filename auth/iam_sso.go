@@ -96,26 +96,27 @@ func StartIamSsoLogin(startUrl, region string) (sessionID, authorizeUrl string, 
 }
 
 // CompleteIamSsoLogin completes IAM SSO login
-func CompleteIamSsoLogin(sessionID, callbackUrl string) (accessToken, refreshToken, clientID, clientSecret, region string, expiresIn int, err error) {
+// Returns: accessToken, refreshToken, clientID, clientSecret, region, expiresIn, profileArn, err
+func CompleteIamSsoLogin(sessionID, callbackUrl string) (accessToken, refreshToken, clientID, clientSecret, region string, expiresIn int, profileArn string, err error) {
 	sessionsMu.RLock()
 	session, ok := sessions[sessionID]
 	sessionsMu.RUnlock()
 
 	if !ok {
-		return "", "", "", "", "", 0, fmt.Errorf("session does not exist or has expired")
+		return "", "", "", "", "", 0, "", fmt.Errorf("session does not exist or has expired")
 	}
 
 	if time.Now().After(session.ExpiresAt) {
 		sessionsMu.Lock()
 		delete(sessions, sessionID)
 		sessionsMu.Unlock()
-		return "", "", "", "", "", 0, fmt.Errorf("session has expired")
+		return "", "", "", "", "", 0, "", fmt.Errorf("session has expired")
 	}
 
 	// parse callback URL
 	parsedUrl, err := url.Parse(callbackUrl)
 	if err != nil {
-		return "", "", "", "", "", 0, fmt.Errorf("invalid callback URL")
+		return "", "", "", "", "", 0, "", fmt.Errorf("invalid callback URL")
 	}
 
 	code := parsedUrl.Query().Get("code")
@@ -123,15 +124,15 @@ func CompleteIamSsoLogin(sessionID, callbackUrl string) (accessToken, refreshTok
 	errorParam := parsedUrl.Query().Get("error")
 
 	if errorParam != "" {
-		return "", "", "", "", "", 0, fmt.Errorf("authorization failed: %s", errorParam)
+		return "", "", "", "", "", 0, "", fmt.Errorf("authorization failed: %s", errorParam)
 	}
 
 	if state != session.State {
-		return "", "", "", "", "", 0, fmt.Errorf("state mismatch, possible security risk")
+		return "", "", "", "", "", 0, "", fmt.Errorf("state mismatch, possible security risk")
 	}
 
 	if code == "" {
-		return "", "", "", "", "", 0, fmt.Errorf("no authorization code received")
+		return "", "", "", "", "", 0, "", fmt.Errorf("no authorization code received")
 	}
 
 	// exchange code for token
@@ -145,7 +146,12 @@ func CompleteIamSsoLogin(sessionID, callbackUrl string) (accessToken, refreshTok
 		session.RedirectUri,
 	)
 	if err != nil {
-		return "", "", "", "", "", 0, err
+		return "", "", "", "", "", 0, "", err
+	}
+
+	// Discover profileArn via ListAvailableProfiles (mirrors OmniRoute postExchange).
+	if accessToken != "" {
+		profileArn = DiscoverProfileArn(accessToken, session.Region)
 	}
 
 	// clean up session
@@ -153,7 +159,7 @@ func CompleteIamSsoLogin(sessionID, callbackUrl string) (accessToken, refreshTok
 	delete(sessions, sessionID)
 	sessionsMu.Unlock()
 
-	return accessToken, refreshToken, session.ClientID, session.ClientSecret, session.Region, expiresIn, nil
+	return accessToken, refreshToken, session.ClientID, session.ClientSecret, session.Region, expiresIn, profileArn, nil
 }
 
 func registerOIDCClient(oidcBase, startUrl, redirectUri string) (clientID, clientSecret string, err error) {

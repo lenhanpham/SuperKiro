@@ -12,7 +12,8 @@ import (
 )
 
 // ImportFromSsoToken imports accounts from SSO Token
-func ImportFromSsoToken(bearerToken, region string) (accessToken, refreshToken, clientID, clientSecret string, expiresIn int, err error) {
+// Returns: accessToken, refreshToken, clientID, clientSecret, expiresIn, profileArn, err
+func ImportFromSsoToken(bearerToken, region string) (accessToken, refreshToken, clientID, clientSecret string, expiresIn int, profileArn string, err error) {
 	if region == "" {
 		region = "us-east-1"
 	}
@@ -24,46 +25,51 @@ func ImportFromSsoToken(bearerToken, region string) (accessToken, refreshToken, 
 	// 1. register OIDC client
 	clientID, clientSecret, err = registerDeviceClient(oidcBase, startUrl)
 	if err != nil {
-		return "", "", "", "", 0, fmt.Errorf("register client failed: %w", err)
+		return "", "", "", "", 0, "", fmt.Errorf("register client failed: %w", err)
 	}
 
 	// 2. initiate device authorization
 	deviceCode, userCode, interval, err := startDeviceAuth(oidcBase, clientID, clientSecret, startUrl)
 	if err != nil {
-		return "", "", "", "", 0, fmt.Errorf("device authorization failed: %w", err)
+		return "", "", "", "", 0, "", fmt.Errorf("device authorization failed: %w", err)
 	}
 
 	// 3. verify Bearer Token
 	if err := verifyBearerToken(portalBase, bearerToken); err != nil {
-		return "", "", "", "", 0, fmt.Errorf("token verification failed: %w", err)
+		return "", "", "", "", 0, "", fmt.Errorf("token verification failed: %w", err)
 	}
 
 	// 4. get device session token
 	deviceSessionToken, err := getDeviceSessionToken(portalBase, bearerToken)
 	if err != nil {
-		return "", "", "", "", 0, fmt.Errorf("get device session failed: %w", err)
+		return "", "", "", "", 0, "", fmt.Errorf("get device session failed: %w", err)
 	}
 
 	// 5. accept user code
 	deviceContext, err := acceptUserCode(oidcBase, userCode, deviceSessionToken)
 	if err != nil {
-		return "", "", "", "", 0, fmt.Errorf("accept user code failed: %w", err)
+		return "", "", "", "", 0, "", fmt.Errorf("accept user code failed: %w", err)
 	}
 
 	// 6. approve authorization
 	if deviceContext != nil {
 		if err := approveAuth(oidcBase, deviceContext, deviceSessionToken); err != nil {
-			return "", "", "", "", 0, fmt.Errorf("approve authorization failed: %w", err)
+			return "", "", "", "", 0, "", fmt.Errorf("approve authorization failed: %w", err)
 		}
 	}
 
 	// 7. poll for token
 	accessToken, refreshToken, expiresIn, err = pollForToken(oidcBase, clientID, clientSecret, deviceCode, interval)
 	if err != nil {
-		return "", "", "", "", 0, fmt.Errorf("get token failed: %w", err)
+		return "", "", "", "", 0, "", fmt.Errorf("get token failed: %w", err)
 	}
 
-	return accessToken, refreshToken, clientID, clientSecret, expiresIn, nil
+	// Discover profileArn via ListAvailableProfiles (mirrors OmniRoute postExchange).
+	if accessToken != "" {
+		profileArn = DiscoverProfileArn(accessToken, region)
+	}
+
+	return accessToken, refreshToken, clientID, clientSecret, expiresIn, profileArn, nil
 }
 
 func registerDeviceClient(oidcBase, startUrl string) (clientID, clientSecret string, err error) {

@@ -146,20 +146,21 @@ func StartBuilderIdLogin(region string) (*BuilderIdSession, error) {
 }
 
 // PollBuilderIdAuth polls Builder ID auth status
-func PollBuilderIdAuth(sessionID string) (accessToken, refreshToken, clientID, clientSecret, region string, expiresIn int, status string, err error) {
+// Returns: accessToken, refreshToken, clientID, clientSecret, region, expiresIn, profileArn, status, err
+func PollBuilderIdAuth(sessionID string) (accessToken, refreshToken, clientID, clientSecret, region string, expiresIn int, profileArn string, status string, err error) {
 	builderIdMu.RLock()
 	session, exists := builderIdSessions[sessionID]
 	builderIdMu.RUnlock()
 
 	if !exists {
-		return "", "", "", "", "", 0, "", fmt.Errorf("session not found or expired")
+		return "", "", "", "", "", 0, "", "", fmt.Errorf("session not found or expired")
 	}
 
 	if time.Now().After(session.ExpiresAt) {
 		builderIdMu.Lock()
 		delete(builderIdSessions, sessionID)
 		builderIdMu.Unlock()
-		return "", "", "", "", "", 0, "", fmt.Errorf("authorization expired")
+		return "", "", "", "", "", 0, "", "", fmt.Errorf("authorization expired")
 	}
 
 	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", session.Region)
@@ -178,7 +179,7 @@ func PollBuilderIdAuth(sessionID string) (accessToken, refreshToken, clientID, c
 	client := httpClient()
 	tokenResp, err := client.Do(tokenReq)
 	if err != nil {
-		return "", "", "", "", "", 0, "", fmt.Errorf("token request failed: %v", err)
+		return "", "", "", "", "", 0, "", "", fmt.Errorf("token request failed: %v", err)
 	}
 	defer tokenResp.Body.Close()
 
@@ -189,15 +190,18 @@ func PollBuilderIdAuth(sessionID string) (accessToken, refreshToken, clientID, c
 			ExpiresIn    int    `json:"expiresIn"`
 		}
 		if err := json.NewDecoder(tokenResp.Body).Decode(&tokenResult); err != nil {
-			return "", "", "", "", "", 0, "", fmt.Errorf("parse token response failed: %v", err)
+			return "", "", "", "", "", 0, "", "", fmt.Errorf("parse token response failed: %v", err)
 		}
+
+		// Discover profileArn via ListAvailableProfiles (mirrors OmniRoute postExchange).
+		profileArn = DiscoverProfileArn(tokenResult.AccessToken, session.Region)
 
 		// clean up session
 		builderIdMu.Lock()
 		delete(builderIdSessions, sessionID)
 		builderIdMu.Unlock()
 
-		return tokenResult.AccessToken, tokenResult.RefreshToken, session.ClientID, session.ClientSecret, session.Region, tokenResult.ExpiresIn, "completed", nil
+		return tokenResult.AccessToken, tokenResult.RefreshToken, session.ClientID, session.ClientSecret, session.Region, tokenResult.ExpiresIn, profileArn, "completed", nil
 	}
 
 	if tokenResp.StatusCode == 400 {
@@ -208,7 +212,7 @@ func PollBuilderIdAuth(sessionID string) (accessToken, refreshToken, clientID, c
 
 		switch errResult.Error {
 		case "authorization_pending":
-			return "", "", "", "", "", 0, "pending", nil
+			return "", "", "", "", "", 0, "", "pending", nil
 		case "slow_down":
 			// increase poll interval
 			builderIdMu.Lock()
@@ -216,23 +220,23 @@ func PollBuilderIdAuth(sessionID string) (accessToken, refreshToken, clientID, c
 				s.Interval += 5
 			}
 			builderIdMu.Unlock()
-			return "", "", "", "", "", 0, "slow_down", nil
+			return "", "", "", "", "", 0, "", "slow_down", nil
 		case "expired_token":
 			builderIdMu.Lock()
 			delete(builderIdSessions, sessionID)
 			builderIdMu.Unlock()
-			return "", "", "", "", "", 0, "", fmt.Errorf("device code expired")
+			return "", "", "", "", "", 0, "", "", fmt.Errorf("device code expired")
 		case "access_denied":
 			builderIdMu.Lock()
 			delete(builderIdSessions, sessionID)
 			builderIdMu.Unlock()
-			return "", "", "", "", "", 0, "", fmt.Errorf("user denied authorization")
+			return "", "", "", "", "", 0, "", "", fmt.Errorf("user denied authorization")
 		default:
-			return "", "", "", "", "", 0, "", fmt.Errorf("authorization error: %s", errResult.Error)
+			return "", "", "", "", "", 0, "", "", fmt.Errorf("authorization error: %s", errResult.Error)
 		}
 	}
 
-	return "", "", "", "", "", 0, "", fmt.Errorf("unexpected response: %d", tokenResp.StatusCode)
+	return "", "", "", "", "", 0, "", "", fmt.Errorf("unexpected response: %d", tokenResp.StatusCode)
 }
 
 // GetBuilderIdSession returns session info
