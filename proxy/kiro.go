@@ -249,10 +249,22 @@ func setPayloadProfileArnForAccount(payload *KiroPayload, account *config.Accoun
 	}
 
 	payload.ProfileArn = strings.TrimSpace(payload.ProfileArn)
-	if account != nil {
+	if account == nil {
+		return
+	}
+
+	// API-key accounts: only use explicitly stored ARN, never resolve defaults.
+	// If empty, leave unset (upstream will 403, which is better than sending
+	// a wrong ARN that 403s silently with a misleading message).
+	if account.AuthMethod == "api_key" {
 		if profileArn := strings.TrimSpace(account.ProfileArn); profileArn != "" {
 			payload.ProfileArn = profileArn
 		}
+		return
+	}
+
+	if profileArn := strings.TrimSpace(account.ProfileArn); profileArn != "" {
+		payload.ProfileArn = profileArn
 	}
 }
 
@@ -286,6 +298,29 @@ func getSortedEndpoints(preferred string) []kiroEndpoint {
 		}
 	}
 	return result
+}
+
+// sortEndpointsForAuth reorders endpoints so CodeWhisperer/Q hosts are tried first
+// when the account uses API-key auth. The Kiro IDE gateway (kiro.dev) rejects
+// tokentype: API_KEY tokens, so the raw CodeWhisperer endpoint must come first.
+// Mirrors 9router's getOrderedBaseUrls().
+func sortEndpointsForAuth(endpoints []kiroEndpoint, authMethod string) []kiroEndpoint {
+	if authMethod != "api_key" {
+		return endpoints
+	}
+	var amazon []kiroEndpoint
+	var others []kiroEndpoint
+	for _, ep := range endpoints {
+		if strings.Contains(ep.URL, "amazonaws.com") {
+			amazon = append(amazon, ep)
+		} else {
+			others = append(others, ep)
+		}
+	}
+	if len(amazon) == 0 {
+		return endpoints
+	}
+	return append(amazon, others...)
 }
 
 // CallKiroAPI calls the Kiro streaming API, trying each configured endpoint with automatic fallback.
@@ -323,19 +358,28 @@ func CallKiroAPI(account *config.Account, payload *KiroPayload, callback *KiroSt
 	}
 
 	if payload != nil && strings.TrimSpace(payload.ProfileArn) == "" {
-		if profileArn, err := ResolveProfileArn(account); err == nil {
-			payload.ProfileArn = profileArn
-		} else {
-			accountEmail := "<nil>"
-			if account != nil {
-				accountEmail = account.Email
+		// API-key accounts must never fall back to default profile ARNs — CodeWhisperer
+		// rejects a profileArn that doesn't belong to the key's account.
+		if account != nil && account.AuthMethod != "api_key" {
+			if profileArn, err := ResolveProfileArn(account); err == nil {
+				payload.ProfileArn = profileArn
+			} else {
+				accountEmail := "<nil>"
+				if account != nil {
+					accountEmail = account.Email
+				}
+				logger.Warnf("[ProfileArn] Failed to resolve profile ARN for %s: %v", accountEmail, err)
 			}
-			logger.Warnf("[ProfileArn] Failed to resolve profile ARN for %s: %v", accountEmail, err)
 		}
 	}
 
-	// Build endpoint list ordered by configuration.
+	// Build endpoint list ordered by configuration, then reorder for api-key auth.
 	endpoints := getSortedEndpoints(config.GetPreferredEndpoint())
+	var authMethod string
+	if account != nil {
+		authMethod = account.AuthMethod
+	}
+	endpoints = sortEndpointsForAuth(endpoints, authMethod)
 
 	var lastErr error
 	for _, ep := range endpoints {
