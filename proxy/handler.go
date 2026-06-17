@@ -5021,7 +5021,7 @@ func (h *Handler) apiSocialLoginPoll(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
 	creds, err := auth.ImportKiroCli()
 	if err != nil {
-		w.WriteHeader(404)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
@@ -5259,7 +5259,7 @@ func (h *Handler) apiRegisterKiroCli(w http.ResponseWriter, r *http.Request) {
 	// Re-register OIDC client for kiro-cli imported account with social refresh fallback.
 	creds, err := auth.ImportKiroCli()
 	if err != nil {
-		w.WriteHeader(404)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
