@@ -688,5 +688,12 @@
   "combos.switchToRoundRobin": "切换到轮询模式",
   "combos.strategyUpdated": "策略已更新",
   "detail.nickname": "昵称",
-  "detail.nicknamePlaceholder": "输入昵称"
+  "detail.nicknamePlaceholder": "输入昵称",
+  "modal.apikeyTitle": "API Key (Headless)",
+  "modal.apikeyDesc": "导入 Kiro/CodeWhisperer API Key (ksk_...)",
+  "apikey.keyLabel": "API 密钥",
+  "apikey.keyPlaceholder": "在此粘贴 ksk_... 密钥",
+  "apikey.region": "区域",
+  "apikey.importSuccess": "API 密钥账号已添加",
+  "apikey.importFailed": "API 密钥验证失败"
 }

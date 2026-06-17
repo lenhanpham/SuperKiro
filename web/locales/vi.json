@@ -689,5 +689,12 @@
   "combos.switchToRoundRobin": "Chuyển sang Round Robin",
   "combos.strategyUpdated": "Chiến lược đã cập nhật",
   "detail.nickname": "Biệt danh",
-  "detail.nicknamePlaceholder": "Nhập biệt danh"
+  "detail.nicknamePlaceholder": "Nhập biệt danh",
+  "modal.apikeyTitle": "API Key (Headless)",
+  "modal.apikeyDesc": "Nhập API Key Kiro/CodeWhisperer (ksk_...)",
+  "apikey.keyLabel": "API Key",
+  "apikey.keyPlaceholder": "Dán khóa ksk_... vào đây",
+  "apikey.region": "Khu vực",
+  "apikey.importSuccess": "Đã thêm tài khoản API Key",
+  "apikey.importFailed": "Xác thực API Key thất bại"
 }

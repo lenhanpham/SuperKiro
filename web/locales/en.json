@@ -688,5 +688,12 @@
   "combos.switchToRoundRobin": "Switch to Round Robin",
   "combos.strategyUpdated": "Strategy updated",
   "detail.nickname": "Nickname",
-  "detail.nicknamePlaceholder": "Enter a nickname"
+  "detail.nicknamePlaceholder": "Enter a nickname",
+  "modal.apikeyTitle": "API Key (Headless)",
+  "modal.apikeyDesc": "Import a Kiro/CodeWhisperer API key (ksk_...)",
+  "apikey.keyLabel": "API Key",
+  "apikey.keyPlaceholder": "Paste ksk_... key here",
+  "apikey.region": "Region",
+  "apikey.importSuccess": "API key account added",
+  "apikey.importFailed": "API key validation failed"
 }
