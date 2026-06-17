@@ -79,6 +79,9 @@ func applyKiroBaseHeaders(req *http.Request, account *config.Account, values kir
 	if account != nil && account.AccessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+account.AccessToken)
 	}
+	if account != nil && account.AuthMethod == "api_key" {
+		req.Header.Set("tokentype", "API_KEY")
+	}
 	req.Header.Set("User-Agent", values.UserAgent)
 	req.Header.Set("x-amz-user-agent", values.AmzUserAgent)
 	req.Header.Set("x-amzn-codewhisperer-optout", "true")
