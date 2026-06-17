@@ -117,6 +117,15 @@ func ResolveProfileArn(account *config.Account) (string, error) {
 	if account == nil {
 		return "", fmt.Errorf("account is nil")
 	}
+	// API-key accounts should never use ResolveProfileArn — their profileArn
+	// is determined at import time via ListAvailableProfiles. Returning the
+	// stored ARN without upstream calls avoids 403 from ARN/account mismatch.
+	if account.AuthMethod == "api_key" {
+		if profileArn := strings.TrimSpace(account.ProfileArn); profileArn != "" {
+			return profileArn, nil
+		}
+		return "", fmt.Errorf("api-key account has no profileArn")
+	}
 	if profileArn := strings.TrimSpace(account.ProfileArn); profileArn != "" {
 		return profileArn, nil
 	}

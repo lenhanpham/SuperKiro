@@ -134,7 +134,11 @@ func CheckRotation(oldRefreshToken string) *rotationResult {
 
 // RefreshAccountToken refreshes the token for an account with serialization.
 // It ensures only one kiro refresh runs at a time across all accounts.
+// API-key accounts have no refresh token — they return immediately.
 func RefreshAccountToken(account *config.Account) (string, string, int64, string, string, string, error) {
+	if account != nil && account.AuthMethod == "api_key" {
+		return account.AccessToken, "", account.ExpiresAt, account.ProfileArn, account.ClientID, account.ClientSecret, nil
+	}
 	return SerialRefreshKiro(func() (string, string, int64, string, string, string, error) {
 		return RefreshToken(account)
 	})
