@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -2772,6 +2773,8 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 	case path == "/auth/social/poll" && r.Method == "POST":
 		h.apiSocialLoginPoll(w, r)
 	case path == "/auth/kiro-cli" && r.Method == "POST":
+		case path == "/auth/kiro-api-key" && r.Method == "POST":
+			h.apiImportKiroApiKey(w, r)
 		h.apiImportKiroCli(w, r)
 	case path == "/auth/kiro-cli-register" && r.Method == "POST":
 		h.apiRegisterKiroCli(w, r)
@@ -5096,6 +5099,160 @@ func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
 			"email": account.Email,
 		},
 	})
+}
+
+func (h *Handler) apiImportKiroApiKey(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ApiKey string `json:"apiKey"`
+		Region string `json:"region"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+	if body.ApiKey == "" {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "API key is required"})
+		return
+	}
+	region := body.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	profileArn, err := resolveApiKeyProfile(body.ApiKey, region)
+	if err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("API key validation failed: %v", err)})
+		return
+	}
+
+	email := extractEmailFromJWT(body.ApiKey)
+
+	now := time.Now()
+	account := config.Account{
+		ID:           uuid.New().String(),
+		Email:        email,
+		AuthMethod:   "api_key",
+		Provider:     "API Key",
+		AccessToken:  body.ApiKey,
+		RefreshToken: "",
+		ProfileArn:   profileArn,
+		Region:       region,
+		Enabled:      true,
+		MachineId:    config.GenerateMachineId(),
+		ExpiresAt:    now.Add(365 * 24 * 60 * 60).Unix(),
+	}
+	if err := config.AddAccount(account); err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Failed to save account: %v", err)})
+		return
+	}
+	h.pool.Reload()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"account": map[string]string{
+			"id":       account.ID,
+			"email":    email,
+			"provider": "kiro",
+		},
+	})
+}
+
+func resolveApiKeyProfile(apiKey, region string) (string, error) {
+	endpoint := fmt.Sprintf("https://codewhisperer.%s.amazonaws.com", region)
+	payload := strings.NewReader(`{"maxResults":10}`)
+
+	req, err := http.NewRequest("POST", endpoint, payload)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
+	req.Header.Set("x-amz-target", "AmazonCodeWhispererService.ListAvailableProfiles")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("tokentype", "API_KEY")
+
+	client := auth.GetAuthClientForProxy(config.GetProxyURL())
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("ListAvailableProfiles returned HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Profiles []struct {
+			Arn        string `json:"arn"`
+			ProfileArn string `json:"profileArn"`
+		} `json:"profiles"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("parse response: %w", err)
+	}
+
+	for _, p := range result.Profiles {
+		arn := p.Arn
+		if arn == "" {
+			arn = p.ProfileArn
+		}
+		if arn != "" && strings.Contains(arn, ":"+region+":") {
+			return arn, nil
+		}
+	}
+	for _, p := range result.Profiles {
+		arn := p.Arn
+		if arn == "" {
+			arn = p.ProfileArn
+		}
+		if arn != "" {
+			return arn, nil
+		}
+	}
+
+	return "", fmt.Errorf("no profiles found for this API key")
+}
+
+func extractEmailFromJWT(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload := parts[1]
+	switch len(payload) % 4 {
+	case 2:
+		payload += "=="
+	case 3:
+		payload += "="
+	}
+	payload = strings.ReplaceAll(payload, "-", "+")
+	payload = strings.ReplaceAll(payload, "_", "/")
+
+	decoded, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Email             string `json:"email"`
+		PreferredUsername string `json:"preferred_username"`
+		Sub               string `json:"sub"`
+	}
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return ""
+	}
+	if claims.Email != "" {
+		return claims.Email
+	}
+	if claims.PreferredUsername != "" {
+		return claims.PreferredUsername
+	}
+	return claims.Sub
 }
 
 func (h *Handler) apiRegisterKiroCli(w http.ResponseWriter, r *http.Request) {
