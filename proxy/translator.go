@@ -197,6 +197,9 @@ type ClaudeUsage struct {
 const maxToolDescLen = 10237
 
 func ClaudeToKiro(req *ClaudeRequest, thinking bool) *KiroPayload {
+	// Strip unsupported content types for this model (image/audio for models that don't support them).
+	stripFromClaudeRequest(req)
+
 	modelID := MapModel(req.Model)
 	origin := "AI_EDITOR"
 
@@ -1083,6 +1086,9 @@ type OpenAIUsage struct {
 // ==================== OpenAI -> Kiro conversion ====================
 
 func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
+	// Strip unsupported content types for this model (image/audio for models that don't support them).
+	stripFromOpenAIRequest(req)
+
 	modelID := MapModel(req.Model)
 	origin := "AI_EDITOR"
 
