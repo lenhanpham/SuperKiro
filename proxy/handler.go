@@ -755,8 +755,8 @@ func (h *Handler) refreshAllAccounts() {
 			}
 		}
 
-		// refresh account info (skip if banned — the quota check itself causes 403)
-		if account.BanStatus == "" || account.BanStatus == "ACTIVE" {
+		// refresh account info (skip for external IdP — their tokens cannot call CodeWhisperer APIs)
+		if !(account.AuthMethod == "external_idp") && (account.BanStatus == "" || account.BanStatus == "ACTIVE") {
 			info, err := RefreshAccountInfo(account)
 			if err != nil {
 				logger.Warnf("[BackgroundRefresh] Failed to refresh %s: %v", account.Email, err)
@@ -1039,6 +1039,11 @@ func (h *Handler) refreshModelsCache() {
 	aggregated := make([]ModelInfo, 0)
 	for i := range accounts {
 		account := &accounts[i]
+		// Skip external IdP (enterprise SSO) accounts — Azure AD tokens cannot call
+		// the CodeWhisperer ListAvailableModels endpoint.
+		if account.AuthMethod == "external_idp" {
+			continue
+		}
 		if err := h.ensureValidToken(account); err != nil {
 			logger.Warnf("[ModelsCache] Skip %s token refresh failed: %v", account.Email, err)
 			h.handleAccountFailure(account, err, "")
@@ -5142,7 +5147,15 @@ func (h *Handler) apiKiroSsoExchange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	email, _, _ := auth.GetUserInfo(newAccessToken)
+	// Enterprise (external IdP) access tokens are IdP-issued JWTs (Azure AD), not AWS
+	// Cognito tokens. CodeWhisperer REST APIs like GetUserInfo reject them, so extract
+	// the email from the JWT claims instead.
+	var email string
+	if authMethod == "external_idp" {
+		email = auth.ExtractEmailFromJWT(newAccessToken)
+	} else {
+		email, _, _ = auth.GetUserInfo(newAccessToken)
+	}
 
 	if profileArn != "" {
 		existing := config.FindAccountByProfileArn(profileArn)

@@ -1011,38 +1011,39 @@ let testModalRunning = false;
       let sessionId = kiroSsoSessionId;
       let finalCallback = callbackUrl;
 
-      // Check for enterprise descriptor in URL parameters
-      const urlObj = new URL(callbackUrl.startsWith('http') ? callbackUrl : 'http://x?' + callbackUrl);
-      const issuerUrl = urlObj.searchParams.get('issuer_url');
-      const loginOption = urlObj.searchParams.get('login_option');
-
-      if (issuerUrl || loginOption === 'external_idp') {
-        // Enterprise flow: step 1 — get IdP auth URL
-        const entRes = await api('/auth/kiro-sso/enterprise-start', {
-          method: 'POST',
-          body: JSON.stringify({ sessionId, callbackUrl }),
-        });
-        const entData = await entRes.json();
-        if (entData.idpAuthUrl) {
-          // Show IdP auth URL, expect user to paste IdP callback
-          const idpUrlEl = $('kiroSsoIdpUrl');
-          if (idpUrlEl) idpUrlEl.textContent = entData.idpAuthUrl;
-          const entRow = $('kiroSsoEnterpriseRow');
-          if (entRow) entRow.classList.remove('hidden');
-          toastPrimary(t('kirossi.enterpriseNote'));
-          // Wait for user to paste IdP callback
-          return;
-        } else {
-          toastError(t('kirossi.failed') + ': ' + (entData.error || 'No IdP URL'));
-          return;
-        }
-      }
-
-      // Check if we have an IdP callback instead (enterprise step 2)
+      // Check for IdP callback FIRST (enterprise step 2) — if the user has already
+      // pasted the IdP callback, skip enterprise detection even if kiroSsoCallback
+      // still contains the old descriptor URL.
       const idpCallbackEl = $('kiroSsoIdpCallback');
       const idpCallback = idpCallbackEl ? idpCallbackEl.value.trim() : '';
       if (idpCallback) {
         finalCallback = idpCallback;
+      } else {
+        // Check for enterprise descriptor in URL parameters (enterprise step 1)
+        const urlObj = new URL(callbackUrl.startsWith('http') ? callbackUrl : 'http://x?' + callbackUrl);
+        const issuerUrl = urlObj.searchParams.get('issuer_url');
+        const loginOption = urlObj.searchParams.get('login_option');
+
+        if (issuerUrl || loginOption === 'external_idp') {
+          // Enterprise flow: step 1 — get IdP auth URL
+          const entRes = await api('/auth/kiro-sso/enterprise-start', {
+            method: 'POST',
+            body: JSON.stringify({ sessionId, callbackUrl }),
+          });
+          const entData = await entRes.json();
+          if (entData.idpAuthUrl) {
+            // Show IdP auth URL, expect user to paste IdP callback
+            const idpUrlEl = $('kiroSsoIdpUrl');
+            if (idpUrlEl) idpUrlEl.textContent = entData.idpAuthUrl;
+            const entRow = $('kiroSsoEnterpriseRow');
+            if (entRow) entRow.classList.remove('hidden');
+            toastPrimary(t('kirossi.enterpriseNote'));
+            return;
+          } else {
+            toastError(t('kirossi.failed') + ': ' + (entData.error || 'No IdP URL'));
+            return;
+          }
+        }
       }
 
       // Exchange code for tokens

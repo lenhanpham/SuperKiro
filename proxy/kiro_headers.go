@@ -79,8 +79,16 @@ func applyKiroBaseHeaders(req *http.Request, account *config.Account, values kir
 	if account != nil && account.AccessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+account.AccessToken)
 	}
-	if account != nil && account.AuthMethod == "api_key" {
-		req.Header.Set("tokentype", "API_KEY")
+	if account != nil {
+		switch account.AuthMethod {
+		case "api_key":
+			req.Header.Set("tokentype", "API_KEY")
+		case "external_idp":
+			// Enterprise SSO (Azure AD) tokens are IdP-issued JWTs, not AWS Cognito
+			// tokens. CodeWhisperer requires this header to recognize the token type;
+			// without it the service misparses the audience claim as an ARN.
+			req.Header.Set("TokenType", "EXTERNAL_IDP")
+		}
 	}
 	req.Header.Set("User-Agent", values.UserAgent)
 	req.Header.Set("x-amz-user-agent", values.AmzUserAgent)
