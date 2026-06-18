@@ -1,11 +1,16 @@
 package auth
 
 import (
+	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 // KiroCliCredentials holds credentials found in kiro-cli SQLite.
@@ -16,6 +21,7 @@ type KiroCliCredentials struct {
 	ClientSecret string
 	Region       string
 	ProfileArn   string
+	ExpiresAt    time.Time
 }
 
 // SSOCacheCredentials holds credentials found in ~/.aws/sso/cache.
@@ -32,7 +38,6 @@ func ImportKiroCli() (*KiroCliCredentials, error) {
 		return nil, fmt.Errorf("home dir: %w", err)
 	}
 
-	// Candidates: Linux/macOS SQLite, Windows SQLite
 	candidates := []string{
 		filepath.Join(home, ".local", "share", "kiro-cli", "data.sqlite3"),
 	}
@@ -41,7 +46,7 @@ func ImportKiroCli() (*KiroCliCredentials, error) {
 	}
 
 	for _, dbPath := range candidates {
-		creds, err := readKiroCliSQLite(dbPath)
+		creds, err := readSQLite(dbPath, "us-east-1")
 		if err == nil && creds != nil && creds.RefreshToken != "" {
 			return creds, nil
 		}
@@ -49,148 +54,159 @@ func ImportKiroCli() (*KiroCliCredentials, error) {
 	return nil, fmt.Errorf("no kiro-cli credentials found")
 }
 
-// readKiroCliSQLite reads a single kiro-cli SQLite database file.
-func readKiroCliSQLite(dbPath string) (*KiroCliCredentials, error) {
-	stat, err := os.Stat(dbPath)
-	if err != nil || stat.IsDir() {
-		return nil, fmt.Errorf("not found: %s", dbPath)
-	}
-
-	// Read entire file and do basic string search — the database is small.
-	data, err := os.ReadFile(dbPath)
+// ParseKiroCliFile parses kiro-cli SQLite content from a base64-encoded file upload.
+func ParseKiroCliFile(fileContent string, region string) (*KiroCliCredentials, error) {
+	data, err := base64.StdEncoding.DecodeString(fileContent)
 	if err != nil {
-		return nil, err
+		data, err = base64.RawStdEncoding.DecodeString(fileContent)
+		if err != nil {
+			return nil, fmt.Errorf("invalid file content: %w", err)
+		}
 	}
-	content := string(data)
+	return ParseKiroCliBytes(data, region)
+}
 
-	// For a full SQLite parser we'd need CGO or a Go SQLite driver. Since SuperKiro
-	// doesn't bundle one, we use a pragmatic text-scan approach: kiro-cli stores
-	// JSON values as text blobs.
+// ParseKiroCliBytes parses kiro-cli SQLite content from raw bytes.
+func ParseKiroCliBytes(data []byte, region string) (*KiroCliCredentials, error) {
+	tmpFile, err := os.CreateTemp("", "kiro-cli-*.sqlite3")
+	if err != nil {
+		return nil, fmt.Errorf("temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		return nil, fmt.Errorf("write temp: %w", err)
+	}
+	tmpFile.Close()
+
+	return readSQLite(tmpFile.Name(), region)
+}
+
+// readSQLite opens a kiro-cli SQLite database and extracts credentials using real SQL.
+func readSQLite(dbPath, region string) (*KiroCliCredentials, error) {
+	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
+	if err != nil {
+		return nil, fmt.Errorf("open: %w", err)
+	}
+	defer db.Close()
+
+	// Set a timeout so we don't block on locked DBs.
+	db.SetConnMaxLifetime(5 * time.Second)
 
 	creds := &KiroCliCredentials{}
 
-	// Try to find refresh_token in JSON blobs keyed by "kirocli:oidc:token"
-	creds.RefreshToken = extractJSONField(content, "kirocli:oidc:token", "refresh_token")
-	if creds.RefreshToken == "" {
-		creds.RefreshToken = extractJSONField(content, "kirocli:odic:token", "refresh_token")
+	tokenKeys := []string{"kirocli:odic:token", "kirocli:oidc:token", "kiro:auth:token"}
+	regKeys := []string{"kirocli:odic:device-registration", "kirocli:oidc:device-registration"}
+	profileKey := "api.codewhisperer.profile"
+	knownTables := []string{"auth_kv", "ItemTable", "storage", "state"}
+
+	// Step 1: discover which tables actually exist in this DB.
+	available := discoverTables(db)
+
+	// Step 2: read tokens (refresh_token + access_token + region).
+	var tokenData map[string]interface{}
+	for _, key := range tokenKeys {
+		for _, table := range knownTables {
+			if !available[table] {
+				continue
+			}
+			val, err := readJSONValue(db, table, key)
+			if err != nil || val == nil {
+				continue
+			}
+			if rt, _ := val["refresh_token"].(string); rt != "" {
+				tokenData = val
+				break
+			}
+		}
+		if tokenData != nil {
+			break
+		}
 	}
-	if creds.RefreshToken == "" {
-		creds.RefreshToken = extractJSONField(content, "kiro:auth:token", "refresh_token")
-	}
-	if creds.RefreshToken == "" {
-		return nil, fmt.Errorf("no refresh token found in %s", dbPath)
+	if tokenData == nil {
+		return nil, fmt.Errorf("no refresh token found in database")
 	}
 
-	// Access token
-	creds.AccessToken = extractJSONField(content, "kirocli:oidc:token", "access_token")
-	if creds.AccessToken == "" {
-		creds.AccessToken = extractJSONField(content, "kiro:auth:token", "access_token")
+	creds.RefreshToken, _ = tokenData["refresh_token"].(string)
+	creds.AccessToken, _ = tokenData["access_token"].(string)
+	if r, ok := tokenData["region"].(string); ok && r != "" {
+		creds.Region = r
+	}
+	// Extract expires_at from token data (matches OmniRoute behavior).
+	if ea, ok := tokenData["expires_at"].(string); ok && ea != "" {
+		parsed, err := time.Parse(time.RFC3339, ea)
+		if err == nil {
+			creds.ExpiresAt = parsed
+		}
+	}
+	if creds.ExpiresAt.IsZero() {
+		if ea, ok := tokenData["expiresAt"].(string); ok && ea != "" {
+			parsed, err := time.Parse(time.RFC3339, ea)
+			if err == nil {
+				creds.ExpiresAt = parsed
+			}
+		}
+	}
+	if creds.ExpiresAt.IsZero() {
+		creds.ExpiresAt = time.Now().Add(1 * time.Hour)
 	}
 
-	// Client registration
-	clientID := extractJSONField(content, "kirocli:oidc:device-registration", "client_id")
-	if clientID == "" {
-		clientID = extractJSONField(content, "kirocli:odic:device-registration", "client_id")
+	// Step 3: read client registration.
+	for _, key := range regKeys {
+		for _, table := range knownTables {
+			if !available[table] {
+				continue
+			}
+			val, err := readJSONValue(db, table, key)
+			if err != nil || val == nil {
+				continue
+			}
+			if cid, _ := val["client_id"].(string); cid != "" {
+				creds.ClientID = cid
+				creds.ClientSecret, _ = val["client_secret"].(string)
+				break
+			}
+		}
+		if creds.ClientID != "" {
+			break
+		}
 	}
-	clientSecret := extractJSONField(content, "kirocli:oidc:device-registration", "client_secret")
-	if clientSecret == "" {
-		clientSecret = extractJSONField(content, "kirocli:odic:device-registration", "client_secret")
-	}
-	creds.ClientID = clientID
-	creds.ClientSecret = clientSecret
 
-	// Profile ARN from state/api.codewhisperer.profile
-	creds.ProfileArn = extractJSONField(content, "api.codewhisperer.profile", "arn")
-	if creds.ProfileArn == "" {
-		creds.ProfileArn = extractJSONField(content, "api.codewhisperer.profile", "profileArn")
+	// Step 4: read profileArn (enterprise SSO / IDC).
+	for _, table := range knownTables {
+		if !available[table] {
+			continue
+		}
+		val, err := readJSONValue(db, table, profileKey)
+		if err != nil || val == nil {
+			continue
+		}
+		if arn, _ := val["arn"].(string); arn != "" {
+			creds.ProfileArn = arn
+			break
+		}
+		if arn, _ := val["profileArn"].(string); arn != "" {
+			creds.ProfileArn = arn
+			break
+		}
 	}
 
-	// Region from token data
-	creds.Region = extractJSONField(content, "kirocli:oidc:token", "region")
+	// Step 5: fallback region.
 	if creds.Region == "" {
 		creds.Region = "us-east-1"
 	}
+	if region != "" {
+		creds.Region = region
+	}
 
+	if creds.RefreshToken == "" {
+		return nil, fmt.Errorf("no refresh token found in database")
+	}
 	return creds, nil
 }
 
-// extractJSONField searches raw content for a JSON string value by key pattern.
-// It looks for: <keyMarker>... "fieldName":"value" ... close>
-func extractJSONField(content, keyMarker, fieldName string) string {
-	// Find the key marker in content
-	idx := strings.Index(content, keyMarker)
-	if idx < 0 {
-		return ""
-	}
-
-	// Find the JSON object containing this value — it's often escaped in a SQLite blob.
-	// Look for `"` followed by fieldName and extract value.
-	// Search within reasonable range after the marker.
-	searchEnd := idx + 1024
-	if searchEnd > len(content) {
-		searchEnd = len(content)
-	}
-	slice := content[idx:searchEnd]
-
-	// Look for `"fieldName":"value"` pattern
-	quoteField := `"` + fieldName + `"`
-	fIdx := strings.Index(slice, quoteField)
-	if fIdx < 0 {
-		// Try unquoted fieldName: "value"
-		return extractQuotedAfter(slice, fieldName)
-	}
-	afterField := slice[fIdx+len(quoteField):]
-
-	// Find colon after field name
-	colonIdx := strings.Index(afterField, ":")
-	if colonIdx < 0 {
-		return ""
-	}
-	afterColon := strings.TrimSpace(afterField[colonIdx+1:])
-
-	// Extract the JSON string value
-	if len(afterColon) == 0 {
-		return ""
-	}
-	if afterColon[0] == '"' {
-		end := strings.IndexByte(afterColon[1:], '"')
-		if end < 0 {
-			return ""
-		}
-		return afterColon[1 : 1+end]
-	}
-	// Fallback: treat until comma/whitespace as value
-	end := strings.IndexAny(afterColon, ", }\n\r")
-	if end < 0 {
-		end = len(afterColon)
-	}
-	return strings.TrimSpace(afterColon[:end])
-}
-
-// extractQuotedAfter tries to find `"fieldName": "value"` pattern.
-func extractQuotedAfter(s, fieldName string) string {
-	start := strings.Index(s, fieldName)
-	if start < 0 {
-		return ""
-	}
-	after := s[start+len(fieldName):]
-	colonIdx := strings.Index(after, ":")
-	if colonIdx < 0 {
-		return ""
-	}
-	afterColon := strings.TrimSpace(after[colonIdx+1:])
-	if len(afterColon) == 0 || afterColon[0] != '"' {
-		return ""
-	}
-	end := strings.IndexByte(afterColon[1:], '"')
-	if end < 0 {
-		return ""
-	}
-	return afterColon[1 : 1+end]
-}
-
 // ImportSSOCache scans ~/.aws/sso/cache/ for Kiro/AWS SSO token files.
-// Returns the first valid refresh token found.
 func ImportSSOCache() (*SSOCacheCredentials, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -203,7 +219,6 @@ func ImportSSOCache() (*SSOCacheCredentials, error) {
 		return nil, fmt.Errorf("read sso cache: %w", err)
 	}
 
-	// Prefer named files: kiro-auth-token.json, amazon-q-auth-token.json
 	preferred := map[string]bool{
 		"kiro-auth-token.json":     true,
 		"amazon-q-auth-token.json": true,
@@ -244,4 +259,37 @@ func ImportSSOCache() (*SSOCacheCredentials, error) {
 		RefreshToken: rt,
 		Source:       best,
 	}, nil
+}
+
+// discoverTables returns the set of table names present in the database.
+func discoverTables(db *sql.DB) map[string]bool {
+	result := make(map[string]bool)
+	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table'")
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err == nil {
+			result[name] = true
+		}
+	}
+	return result
+}
+
+// readJSONValue reads a JSON value for a given key from the specified table.
+// The table must have a `value` column (the SQLite schema stores JSON text in a value column).
+func readJSONValue(db *sql.DB, table, key string) (map[string]interface{}, error) {
+	query := fmt.Sprintf("SELECT value FROM %q WHERE key = ?", table)
+	row := db.QueryRow(query, key)
+	var raw string
+	if err := row.Scan(&raw); err != nil {
+		return nil, err
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return nil, err
+	}
+	return data, nil
 }

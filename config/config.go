@@ -45,13 +45,18 @@ type Account struct {
 	RefreshToken string `json:"refreshToken"`           // OAuth refresh token for token renewal
 	ClientID     string `json:"clientId,omitempty"`     // OIDC client ID (for IdC auth)
 	ClientSecret string `json:"clientSecret,omitempty"` // OIDC client secret (for IdC auth)
-	AuthMethod   string `json:"authMethod"`             // Authentication method: "idc" (AWS IdC) or "social" (GitHub/Google)
+	AuthMethod   string `json:"authMethod"`             // Authentication method: "idc" (AWS IdC), "social" (GitHub/Google/SSO), "external_idp" (enterprise SSO)
 	Provider     string `json:"provider,omitempty"`     // Identity provider name (e.g., "BuilderId", "GitHub")
 	Region       string `json:"region"`                 // AWS region for OIDC endpoints
 	StartUrl     string `json:"startUrl,omitempty"`     // AWS SSO start URL
 	ExpiresAt    int64  `json:"expiresAt,omitempty"`    // Token expiration timestamp (Unix seconds)
 	MachineId    string `json:"machineId,omitempty"`    // UUID machine identifier for request tracking
 	ProfileArn   string `json:"profileArn,omitempty"`   // CodeWhisperer/Kiro profile ARN for generation requests
+
+	// Enterprise external IdP metadata (used when AuthMethod == "external_idp")
+	TokenEndpoint string `json:"tokenEndpoint,omitempty"` // IdP token endpoint URL for refresh
+	IssuerURL     string `json:"issuerUrl,omitempty"`     // IdP issuer URL (from OIDC discovery)
+	Scopes        string `json:"scopes,omitempty"`        // OAuth scopes for IdP token requests
 
 	// Per-account outbound proxy (falls back to global ProxyURL if empty)
 	ProxyURL string `json:"proxyURL,omitempty"`
@@ -443,6 +448,22 @@ func GetEnabledAccounts() []Account {
 		}
 	}
 	return accounts
+}
+
+// FindAccountByProfileArn searches for an existing account with the given profile ARN.
+// Returns nil when profileArn is empty or no match is found (OmniRoute dedup parity).
+func FindAccountByProfileArn(profileArn string) *Account {
+	if profileArn == "" {
+		return nil
+	}
+	cfgLock.RLock()
+	defer cfgLock.RUnlock()
+	for _, a := range cfg.Accounts {
+		if a.ProfileArn == profileArn {
+			return &a
+		}
+	}
+	return nil
 }
 
 func AddAccount(account Account) error {

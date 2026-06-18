@@ -11,6 +11,7 @@ import (
 	"superkiro/logger"
 	"superkiro/pool"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2772,10 +2773,16 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 		h.apiSocialLoginStart(w, r)
 	case path == "/auth/social/poll" && r.Method == "POST":
 		h.apiSocialLoginPoll(w, r)
+	case path == "/auth/kiro-sso/start" && r.Method == "POST":
+		h.apiKiroSsoStart(w, r)
+	case path == "/auth/kiro-sso/enterprise-start" && r.Method == "POST":
+		h.apiKiroEnterpriseStart(w, r)
+	case path == "/auth/kiro-sso/exchange" && r.Method == "POST":
+		h.apiKiroSsoExchange(w, r)
 	case path == "/auth/kiro-cli" && r.Method == "POST":
-		case path == "/auth/kiro-api-key" && r.Method == "POST":
-			h.apiImportKiroApiKey(w, r)
 		h.apiImportKiroCli(w, r)
+	case path == "/auth/kiro-api-key" && r.Method == "POST":
+		h.apiImportKiroApiKey(w, r)
 	case path == "/auth/kiro-cli-register" && r.Method == "POST":
 		h.apiRegisterKiroCli(w, r)
 	case path == "/auth/sso-cache" && r.Method == "POST":
@@ -4921,6 +4928,269 @@ func (h *Handler) apiImportSsoToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ── Kiro SSO (Browser-Based Social/Enterprise Login) ─────────────────────────
+
+func (h *Handler) apiKiroSsoStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Region string `json:"region"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+	region := req.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	session, err := auth.NewSsoSession(region)
+	if err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	signInURL := auth.SocialSignInURL(session.PKCE)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"sessionId": session.ID,
+		"authUrl":   signInURL,
+		"state":     session.PKCE.State,
+		"region":    region,
+	})
+}
+
+func (h *Handler) apiKiroEnterpriseStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID   string `json:"sessionId"`
+		CallbackURL string `json:"callbackUrl"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+
+	session := auth.GetSsoSession(req.SessionID)
+	if session == nil {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Session not found or expired"})
+		return
+	}
+
+	parsed, err := url.Parse(req.CallbackURL)
+	if err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid callback URL"})
+		return
+	}
+	q := parsed.Query()
+	issuerURL := strings.TrimSpace(q.Get("issuer_url"))
+	clientID2 := strings.TrimSpace(q.Get("client_id"))
+	scopes := strings.TrimSpace(q.Get("scopes"))
+	if clientID2 == "" {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Missing client_id in enterprise descriptor"})
+		return
+	}
+
+	authEndpoint, tokenEndpoint, err := auth.ExternalIdpDiscover(r.Context(), issuerURL)
+	if err != nil {
+		w.WriteHeader(502)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	pkce2, err := auth.GenerateSocialPKCE()
+	if err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	redirectURI := "http://localhost:3128/oauth/callback"
+	idpAuthURL := auth.BuildExternalIdpAuthorizeURL(authEndpoint, clientID2, redirectURI, scopes, pkce2.Challenge, pkce2.State)
+
+	auth.SetSsoEnterpriseContext(req.SessionID, tokenEndpoint, issuerURL, clientID2, scopes, pkce2.Verifier, redirectURI)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"idpAuthUrl": idpAuthURL,
+		"state":      pkce2.State,
+	})
+}
+
+func (h *Handler) apiKiroSsoExchange(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID   string `json:"sessionId"`
+		CallbackURL string `json:"callbackUrl"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+
+	session := auth.GetSsoSession(req.SessionID)
+	if session == nil {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Session not found or expired"})
+		return
+	}
+	defer auth.DeleteSsoSession(req.SessionID)
+
+	parsed, err := url.Parse(req.CallbackURL)
+	if err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid callback URL"})
+		return
+	}
+	q := parsed.Query()
+	code := strings.TrimSpace(q.Get("code"))
+	errParam := strings.TrimSpace(q.Get("error"))
+	desc := strings.TrimSpace(q.Get("error_description"))
+	if errParam != "" {
+		msg := errParam
+		if desc != "" {
+			msg += ": " + desc
+		}
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": msg})
+		return
+	}
+	if code == "" {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "No authorization code in callback"})
+		return
+	}
+
+	var accessToken, refreshToken, profileArn string
+	var expiresIn int
+	region := session.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	if session.Provider == "enterprise" {
+		if session.CodeVerifier == "" {
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Missing enterprise PKCE verifier"})
+			return
+		}
+		at, rt, exp, err := auth.ExchangeExternalIdpCode(r.Context(), session.TokenEndpoint, session.ClientID, code, session.CodeVerifier, session.RedirectURI, session.Scopes)
+		if err != nil {
+			w.WriteHeader(502)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		accessToken, refreshToken, expiresIn = at, rt, exp
+	} else {
+		if session.PKCE == nil {
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Missing PKCE data"})
+			return
+		}
+		at, rt, pa, exp, err := auth.ExchangeSocialCode(r.Context(), code, session.PKCE.Verifier)
+		if err != nil {
+			w.WriteHeader(502)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		accessToken, refreshToken, profileArn, expiresIn = at, rt, pa, exp
+	}
+
+	// Determine auth method and IdP context from session.
+	authMethod := "social"
+	var tokenEndpoint, issuerURL, scopesStr string
+	if session.Provider == "enterprise" {
+		authMethod = "external_idp"
+		tokenEndpoint = session.TokenEndpoint
+		issuerURL = session.IssuerURL
+		scopesStr = session.Scopes
+	}
+
+	newAccessToken := accessToken
+	newRefreshToken := refreshToken
+	newExpiresAt := time.Now().Unix() + int64(expiresIn)
+	if profileArn == "" {
+		pa, newAT, newRT, newExp, resolveErr := auth.ResolveProfileArn(accessToken, region, session.ClientID, "", tokenEndpoint, scopesStr, refreshToken)
+		if resolveErr == nil {
+			if pa != "" {
+				profileArn = pa
+			}
+			if newAT != "" {
+				newAccessToken = newAT
+				newRefreshToken = newRT
+				newExpiresAt = newExp
+			}
+		}
+	}
+
+	email, _, _ := auth.GetUserInfo(newAccessToken)
+
+	if profileArn != "" {
+		existing := config.FindAccountByProfileArn(profileArn)
+		if existing != nil {
+			existing.AccessToken = newAccessToken
+			existing.RefreshToken = newRefreshToken
+			existing.ExpiresAt = newExpiresAt
+			existing.Email = email
+			existing.AuthMethod = authMethod
+			if tokenEndpoint != "" {
+				existing.TokenEndpoint = tokenEndpoint
+				existing.IssuerURL = issuerURL
+				existing.Scopes = scopesStr
+			}
+			if err := config.UpdateAccount(existing.ID, *existing); err != nil {
+				w.WriteHeader(500)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			h.pool.Reload()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"source":  "kiro-sso-" + session.Provider,
+				"account": map[string]interface{}{
+					"id":    existing.ID,
+					"email": email,
+				},
+			})
+			return
+		}
+	}
+
+	account := config.Account{
+		ID:            auth.GenerateAccountID(),
+		Email:         email,
+		AccessToken:   newAccessToken,
+		RefreshToken:  newRefreshToken,
+		AuthMethod:    authMethod,
+		Provider:      "BuilderId",
+		Region:        region,
+		ExpiresAt:     newExpiresAt,
+		Enabled:       true,
+		MachineId:     config.GenerateMachineId(),
+		ProfileArn:    profileArn,
+		TokenEndpoint: tokenEndpoint,
+		IssuerURL:     issuerURL,
+		Scopes:        scopesStr,
+	}
+	if err := config.AddAccount(account); err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	h.pool.Reload()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"source":  "kiro-sso-" + session.Provider,
+		"account": map[string]interface{}{
+			"id":    account.ID,
+			"email": email,
+		},
+	})
+}
+
 func (h *Handler) apiSocialLoginStart(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Provider string `json:"provider"`
@@ -5019,9 +5289,38 @@ func (h *Handler) apiSocialLoginPoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
-	creds, err := auth.ImportKiroCli()
+	var body struct {
+		FileContent string `json:"fileContent"`
+		FileName    string `json:"fileName"`
+		Region      string `json:"region"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+
+	var creds *auth.KiroCliCredentials
+	var err error
+	if body.FileContent != "" {
+		creds, err = auth.ParseKiroCliFile(body.FileContent, body.Region)
+	} else {
+		creds, err = auth.ImportKiroCli()
+		// Fall back to ~/.aws/sso/cache if SQLite not found (OmniRoute parity).
+		if err != nil {
+			ssoCreds, ssoErr := auth.ImportSSOCache()
+			if ssoErr == nil && ssoCreds.RefreshToken != "" {
+				creds = &auth.KiroCliCredentials{
+					RefreshToken: ssoCreds.RefreshToken,
+					Region:       body.Region,
+					ExpiresAt:    time.Now().Add(1 * time.Hour),
+				}
+				err = nil
+			}
+		}
+	}
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
@@ -5031,11 +5330,22 @@ func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
 	if region == "" {
 		region = "us-east-1"
 	}
+	// Register OIDC client if SQLite didn't have one (OmniRoute parity).
+	// SSO-cache fallback path always needs this.
+	clientID := creds.ClientID
+	clientSecret := creds.ClientSecret
+	if clientID == "" || clientSecret == "" {
+		newCID, newCS, regErr := auth.RegisterOIDCClient(region)
+		if regErr == nil && newCID != "" {
+			clientID = newCID
+			clientSecret = newCS
+		}
+	}
 	tempAccount := &config.Account{
 		RefreshToken: creds.RefreshToken,
 		AccessToken:  creds.AccessToken,
-		ClientID:     creds.ClientID,
-		ClientSecret: creds.ClientSecret,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
 		AuthMethod:   "idc",
 		Region:       region,
 	}
@@ -5068,13 +5378,39 @@ func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
 	// get user info
 	email, _, _ := auth.GetUserInfo(creds.AccessToken)
 
+	// Dedup by profileArn: update existing account if found (OmniRoute parity).
+	if profileArn != "" {
+		existing := config.FindAccountByProfileArn(profileArn)
+		if existing != nil {
+			existing.AccessToken = creds.AccessToken
+			existing.RefreshToken = creds.RefreshToken
+			existing.ExpiresAt = expiresAt
+			existing.Email = email
+			if err := config.UpdateAccount(existing.ID, *existing); err != nil {
+				w.WriteHeader(500)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			h.pool.Reload()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"source":  "kiro-cli-sqlite",
+				"account": map[string]interface{}{
+					"id":    existing.ID,
+					"email": email,
+				},
+			})
+			return
+		}
+	}
+
 	account := config.Account{
 		ID:           auth.GenerateAccountID(),
 		Email:        email,
 		AccessToken:  creds.AccessToken,
 		RefreshToken: creds.RefreshToken,
-		ClientID:     creds.ClientID,
-		ClientSecret: creds.ClientSecret,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
 		AuthMethod:   "idc",
 		Provider:     "BuilderId",
 		Region:       region,

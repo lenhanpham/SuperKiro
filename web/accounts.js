@@ -106,6 +106,7 @@ let testModalRunning = false;
     if (!method) return '-';
     const normalized = String(method).toLowerCase();
     if (normalized === 'idc') return t('auth.enterprise');
+    if (normalized === 'external_idp') return t('auth.enterpriseSso');
     if (normalized === 'social') return t('auth.social');
     if (normalized === 'builderid') return 'BuilderID';
     if (normalized === 'github') return t('local.providerGithub');
@@ -800,6 +801,7 @@ let testModalRunning = false;
     else if (type === 'iam') modalIam(title, body);
     else if (type === 'sso') modalSso(title, body);
     else if (type === 'social') modalSocial(title, body);
+    else if (type === 'kirossi') modalKiroSso(title, body);
     else if (type === 'kirocli') modalKiroCli(title, body);
     else if (type === 'ssocache') modalSSOCache(title, body);
     else if (type === 'local') modalLocal(title, body);
@@ -825,6 +827,7 @@ let testModalRunning = false;
       methodCard('iam', t('modal.iamTitle'), t('modal.iamDesc')) +
       methodCard('sso', t('modal.ssoTitle'), t('modal.ssoDesc')) +
       methodCard('social', t('modal.socialTitle'), t('modal.socialDesc')) +
+      methodCard('kirossi', t('modal.kirossiTitle'), t('modal.kirossiDesc')) +
       methodCard('kirocli', t('modal.kirocliTitle'), t('modal.kirocliDesc')) +
       methodCard('ssocache', t('modal.ssocacheTitle'), t('modal.ssocacheDesc')) +
       methodCard('local', t('modal.localTitle'), t('modal.localDesc')) +
@@ -933,6 +936,130 @@ let testModalRunning = false;
     $('startSocialBtn').addEventListener('click', startSocialLogin);
   }
 
+  let kiroSsoSessionId = '';
+  function modalKiroSso(title, body) {
+    title.textContent = t('modal.kirossiTitle');
+    body.innerHTML =
+      '<p class="help-block">' + escapeHtml(t('modal.kirossiDesc')) + '</p>' +
+      '<div id="kiroSsoStep1">' +
+      '<div class="form-group"><label>' + escapeHtml(t('detail.region')) + '</label><input type="text" id="kiroSsoRegion" value="us-east-1" /></div>' +
+      '<div class="modal-footer">' +
+      '<button class="btn btn-secondary" data-modal-goto="add" type="button">' + escapeHtml(t('common.back')) + '</button>' +
+      '<button class="btn btn-primary" id="startKiroSsoBtn" type="button">' + escapeHtml(t('kirossi.open')) + '</button>' +
+      '</div></div>' +
+      '<div id="kiroSsoStep2" class="hidden">' +
+      '<p class="help-block">' + escapeHtml(t('kirossi.step1')) + '</p>' +
+      '<div class="message message-info"><p class="font-mono text-xs break-all" id="kiroSsoAuthUrl"></p></div>' +
+      '<div class="flex gap-2 mt-2">' +
+      '<button class="btn btn-sm btn-outline flex-1" id="kiroSsoOpenBtn" type="button">' + escapeHtml(t('kirossi.open')) + '</button>' +
+      '<button class="btn btn-sm btn-outline flex-1" id="kiroSsoCopyBtn" type="button">' + escapeHtml(t('common.copy')) + '</button>' +
+      '</div>' +
+      '<p class="help-block mt-3">' + escapeHtml(t('kirossi.afterSignIn')) + '</p>' +
+      '<div class="form-group"><label>' + escapeHtml(t('kirossi.callbackLabel')) + '</label>' +
+      '<input type="text" id="kiroSsoCallback" placeholder="' + escapeAttr(t('kirossi.callbackPlaceholder')) + '" /></div>' +
+      '<div id="kiroSsoEnterpriseRow" class="hidden">' +
+      '<p class="message message-warning">' + escapeHtml(t('kirossi.enterpriseNote')) + '</p>' +
+      '<div class="message message-info"><p class="font-mono text-xs break-all" id="kiroSsoIdpUrl"></p></div>' +
+      '<div class="flex gap-2 mt-2">' +
+      '<button class="btn btn-sm btn-outline flex-1" id="kiroSsoIdpOpenBtn" type="button">' + escapeHtml(t('kirossi.open')) + '</button>' +
+      '<button class="btn btn-sm btn-outline flex-1" id="kiroSsoIdpCopyBtn" type="button">' + escapeHtml(t('common.copy')) + '</button>' +
+      '</div>' +
+      '<div class="form-group"><label>' + escapeHtml(t('kirossi.idpCallbackLabel')) + '</label>' +
+      '<input type="text" id="kiroSsoIdpCallback" placeholder="' + escapeAttr(t('kirossi.idpCallbackPlaceholder')) + '" /></div>' +
+      '</div>' +
+      '<div class="modal-footer">' +
+      '<button class="btn btn-secondary" data-modal-goto="add" type="button">' + escapeHtml(t('common.back')) + '</button>' +
+      '<button class="btn btn-primary" id="completeKiroSsoBtn" type="button">' + escapeHtml(t('kirossi.submit')) + '</button>' +
+      '</div></div>';
+    $('startKiroSsoBtn').addEventListener('click', startKiroSso);
+    $('completeKiroSsoBtn').addEventListener('click', completeKiroSso);
+    $('kiroSsoOpenBtn').addEventListener('click', () => { const el = $('kiroSsoAuthUrl'); if (el) window.open(el.textContent, '_blank'); });
+    $('kiroSsoCopyBtn').addEventListener('click', async () => { const el = $('kiroSsoAuthUrl'); if (el) await copyText(el.textContent); });
+    $('kiroSsoIdpOpenBtn').addEventListener('click', () => { const el = $('kiroSsoIdpUrl'); if (el) window.open(el.textContent, '_blank'); });
+    $('kiroSsoIdpCopyBtn').addEventListener('click', async () => { const el = $('kiroSsoIdpUrl'); if (el) await copyText(el.textContent); });
+  }
+  async function startKiroSso() {
+    const region = ($('kiroSsoRegion') && $('kiroSsoRegion').value) || 'us-east-1';
+    try {
+      const res = await api('/auth/kiro-sso/start', {
+        method: 'POST',
+        body: JSON.stringify({ region }),
+      });
+      const d = await res.json();
+      if (!d.sessionId) { toastError(t('kirossi.failed') + ': ' + (d.error || 'no session')); return; }
+      kiroSsoSessionId = d.sessionId;
+      const authUrlEl = $('kiroSsoAuthUrl');
+      if (authUrlEl) authUrlEl.textContent = d.authUrl;
+      const step1 = $('kiroSsoStep1');
+      const step2 = $('kiroSsoStep2');
+      if (step1) step1.classList.add('hidden');
+      if (step2) step2.classList.remove('hidden');
+    } catch (e) { toastError(t('kirossi.failed') + ': ' + (e.message || e)); }
+  }
+  async function completeKiroSso() {
+    const callbackEl = $('kiroSsoCallback');
+    const callbackUrl = callbackEl ? callbackEl.value.trim() : '';
+    if (!callbackUrl) { toastWarning(t('kirossi.callbackLabel') + ' required'); return; }
+
+    // Check if enterprise descriptor (has issuer_url but no code)
+    // We try exchange first; if the backend detects enterprise descriptor, it tells us.
+    try {
+      let sessionId = kiroSsoSessionId;
+      let finalCallback = callbackUrl;
+
+      // Check for enterprise descriptor in URL parameters
+      const urlObj = new URL(callbackUrl.startsWith('http') ? callbackUrl : 'http://x?' + callbackUrl);
+      const issuerUrl = urlObj.searchParams.get('issuer_url');
+      const loginOption = urlObj.searchParams.get('login_option');
+
+      if (issuerUrl || loginOption === 'external_idp') {
+        // Enterprise flow: step 1 — get IdP auth URL
+        const entRes = await api('/auth/kiro-sso/enterprise-start', {
+          method: 'POST',
+          body: JSON.stringify({ sessionId, callbackUrl }),
+        });
+        const entData = await entRes.json();
+        if (entData.idpAuthUrl) {
+          // Show IdP auth URL, expect user to paste IdP callback
+          const idpUrlEl = $('kiroSsoIdpUrl');
+          if (idpUrlEl) idpUrlEl.textContent = entData.idpAuthUrl;
+          const entRow = $('kiroSsoEnterpriseRow');
+          if (entRow) entRow.classList.remove('hidden');
+          toastPrimary(t('kirossi.enterpriseNote'));
+          // Wait for user to paste IdP callback
+          return;
+        } else {
+          toastError(t('kirossi.failed') + ': ' + (entData.error || 'No IdP URL'));
+          return;
+        }
+      }
+
+      // Check if we have an IdP callback instead (enterprise step 2)
+      const idpCallbackEl = $('kiroSsoIdpCallback');
+      const idpCallback = idpCallbackEl ? idpCallbackEl.value.trim() : '';
+      if (idpCallback) {
+        finalCallback = idpCallback;
+      }
+
+      // Exchange code for tokens
+      const res = await api('/auth/kiro-sso/exchange', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId, callbackUrl: finalCallback }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        closeModal(); loadAccounts(); loadStats();
+        toastPrimary(t('kirossi.importSuccess') + ': ' + (d.account?.email || d.account?.id));
+        if (d.account?.id) autoRefreshNewAccount(d.account.id);
+      } else {
+        toastError(t('kirossi.failed') + ': ' + (d.error || ''));
+      }
+    } catch (e) {
+      console.error('kiroSso:', e);
+      toastError(t('kirossi.failed') + ': ' + (e.message || e));
+    }
+  }
+
   function modalKiroCli(title, body) {
     title.textContent = t('modal.kirocliTitle');
     body.innerHTML =
@@ -941,8 +1068,12 @@ let testModalRunning = false;
       '<p><b>' + escapeHtml(t('kirocli.fileLocation')) + '</b></p>' +
       '<p>' + escapeHtml(t('kirocli.linux')) + ': <code class="code-inline">~/.local/share/kiro-cli/data.sqlite3</code></p>' +
       '<p>' + escapeHtml(t('kirocli.windows')) + ': <code class="code-inline">%APPDATA%\\kiro\\storage.db</code></p>' +
+      '<p><i class="fa-regular fa-circle-info"></i> ' + escapeHtml(t('kirocli.uploadHint')) + '</p>' +
       '</div>' +
-      '<p class="message message-info">' + escapeHtml(t('kirocli.hint')) + '</p>' +
+      '<div class="form-group"><label>' + escapeHtml(t('kirocli.uploadLabel')) + '</label>' +
+      '<input type="file" accept=".sqlite3,.db,.sqlite" id="kiroCliFile" /></div>' +
+      '<div class="form-group"><label>' + escapeHtml(t('detail.region')) + '</label>' +
+      '<input type="text" id="kiroCliRegion" value="us-east-1" /></div>' +
       '<div class="modal-footer">' +
       '<button class="btn btn-secondary" data-modal-goto="add" type="button">' + escapeHtml(t('common.back')) + '</button>' +
       '<button class="btn btn-primary" id="importKiroCliBtn" type="button">' + escapeHtml(t('common.import')) + '</button>' +
@@ -1248,13 +1379,38 @@ let testModalRunning = false;
   var socialPollTimer = null;
   var socialDeviceCode = '';
   async function importKiroCli() {
-    const res = await api('/auth/kiro-cli', { method: 'POST' });
-    const d = await res.json();
-    if (d.success) {
-      closeModal(); loadAccounts(); loadStats();
-      toastPrimary(t('kirocli.importSuccess') + ': ' + (d.account?.email || d.account?.id));
-      autoRefreshNewAccount(d.account?.id);
-    } else toastError(t('common.failed') + ': ' + (d.error || ''));
+    try {
+      const fileInput = $('kiroCliFile');
+      const region = ($('kiroCliRegion') && $('kiroCliRegion').value) || 'us-east-1';
+      let payload = { region };
+
+      if (fileInput && fileInput.files && fileInput.files[0]) {
+        const file = fileInput.files[0];
+        if (file.size > 50 * 1024 * 1024) return toastWarning(t('kirocli.fileTooLarge'));
+        const b64 = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => {
+            const data = r.result.split(',')[1] || r.result;
+            resolve(data);
+          };
+          r.onerror = () => reject(r.error);
+          r.readAsDataURL(file);
+        });
+        payload.fileContent = b64;
+        payload.fileName = file.name;
+      }
+
+      const res = await api('/auth/kiro-cli', { method: 'POST', body: JSON.stringify(payload) });
+      const d = await res.json();
+      if (d.success) {
+        closeModal(); loadAccounts(); loadStats();
+        toastPrimary(t('kirocli.importSuccess') + ': ' + (d.account?.email || d.account?.id));
+        autoRefreshNewAccount(d.account?.id);
+      } else toastError(t('common.failed') + ': ' + (d.error || ''));
+    } catch (e) {
+      console.error('importKiroCli:', e);
+      toastError(t('common.failed') + ': ' + (e.message || e));
+    }
   }
   async function importSSOCache() {
     const region = ($('ssocacheRegion') && $('ssocacheRegion').value) || 'us-east-1';

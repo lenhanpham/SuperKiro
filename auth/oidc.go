@@ -7,6 +7,7 @@ import (
 	"io"
 	"superkiro/config"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -227,6 +228,164 @@ func DiscoverProfileArn(accessToken, region string) string {
 	return fallback
 }
 
+// ListProfiles calls the CodeWhisperer ListAvailableProfiles endpoint with the Kiro IDE
+// headers. When externalIdp is true, includes TokenType: EXTERNAL_IDP for enterprise SSO.
+// Returns the first profile ARN or "" if none available.
+func ListProfiles(accessToken, region string, externalIdp bool) string {
+	if accessToken == "" {
+		return ""
+	}
+	if region == "" {
+		region = "us-east-1"
+	}
+	region = strings.ToLower(region)
+
+	var runtimeHost string
+	if region == "us-east-1" {
+		runtimeHost = "https://codewhisperer.us-east-1.amazonaws.com"
+	} else {
+		runtimeHost = fmt.Sprintf("https://q.%s.amazonaws.com", region)
+	}
+
+	payload := map[string]int{"maxResults": 10}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", runtimeHost+"/ListAvailableProfiles", bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
+	req.Header.Set("x-amz-target", "AmazonCodeWhispererService.ListAvailableProfiles")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "aws-sdk-js/1.0.0 KiroIDE-0.10.32")
+	if externalIdp {
+		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	}
+
+	client := httpClient()
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return ""
+	}
+
+	var result struct {
+		Profiles []struct {
+			Arn string `json:"arn"`
+		} `json:"profiles"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ""
+	}
+
+	normalizedRegion := strings.ToLower(region)
+	var fallback string
+	for _, profile := range result.Profiles {
+		arn := strings.TrimSpace(profile.Arn)
+		if arn == "" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(arn), ":"+normalizedRegion+":") {
+			return arn
+		}
+		if fallback == "" {
+			fallback = arn
+		}
+	}
+	return fallback
+}
+
+// ResolveProfileArn attempts to discover the profile ARN for a credential. If the initial
+// ListProfiles call fails, it refreshes the token (when clientID/clientSecret are available)
+// and retries. Returns the resolved profile ARN and optionally refreshed token values.
+func ResolveProfileArn(accessToken, region, clientID, clientSecret, tokenEndpoint, scopes string, currentRefreshToken string) (profileArn string, newAccessToken, newRefreshToken string, newExpiresAt int64, err error) {
+	if accessToken == "" {
+		return "", "", "", 0, fmt.Errorf("resolve profile: access token is empty")
+	}
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	externalIdp := tokenEndpoint != ""
+	profileArn = ListProfiles(accessToken, region, externalIdp)
+	if profileArn != "" {
+		return profileArn, "", "", 0, nil
+	}
+
+	// First call returned nothing — try refresh then retry.
+	if clientID == "" || clientSecret == "" {
+		return "", "", "", 0, fmt.Errorf("resolve profile: no profiles found and no client credentials to refresh")
+	}
+
+	// Build a temp account for refresh. Use the OIDC method for device-flow tokens;
+	authMethod := "idc"
+	if externalIdp {
+		authMethod = "external_idp"
+	}
+	newAT, newRT, newExp, pa, _, _, refreshErr := RefreshToken(&config.Account{
+		AccessToken:   accessToken,
+		RefreshToken:  currentRefreshToken,
+		ClientID:      clientID,
+		ClientSecret:  clientSecret,
+		AuthMethod:    authMethod,
+		Region:        region,
+		TokenEndpoint: tokenEndpoint,
+		Scopes:        scopes,
+	})
+	if refreshErr != nil {
+		return "", "", "", 0, fmt.Errorf("resolve profile: refresh failed: %w", refreshErr)
+	}
+
+	// After refresh the social path may have returned a profileArn.
+	if pa != "" {
+		return pa, newAT, newRT, newExp, nil
+	}
+
+	// Retry ListProfiles with refreshed token.
+	if newAT != "" {
+		pa2 := ListProfiles(newAT, region, externalIdp)
+		if pa2 != "" {
+			return pa2, newAT, newRT, newExp, nil
+		}
+	}
+
+	return "", newAT, newRT, newExp, fmt.Errorf("resolve profile: no profiles available after refresh")
+}
+
+// CachedProfileArnForStartURL looks for an existing account with the same start URL and
+// region that already has a profileArn. This is used as a last-resort fallback for IDC
+// tenants where ListAvailableProfiles returns empty after a successful device login.
+func CachedProfileArnForStartURL(startURL, region string) string {
+	if region == "" {
+		region = "us-east-1"
+	}
+	region = strings.ToLower(strings.TrimSpace(region))
+	startURL = strings.TrimSpace(startURL)
+	if startURL == "" {
+		return ""
+	}
+
+	accounts := config.GetAccounts()
+	for _, a := range accounts {
+		if a.ProfileArn == "" {
+			continue
+		}
+		if strings.TrimSpace(a.StartUrl) != startURL {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(a.Region)) != region {
+			continue
+		}
+		return a.ProfileArn
+	}
+	return ""
+}
+
 // RefreshToken refreshes the access token
 // Returns: accessToken, refreshToken, expiresAt, profileArn, error
 // RefreshToken refreshes the access token.
@@ -239,6 +398,18 @@ func RefreshToken(account *config.Account) (string, string, int64, string, strin
 		proxyURL = config.GetProxyURL()
 	}
 	client := GetAuthClientForProxy(proxyURL)
+
+	// External IdP (enterprise SSO) refresh against the IdP's own token endpoint.
+	// The IdP-issued token is not valid at the Kiro OIDC or social endpoints.
+	if account.AuthMethod == "external_idp" && account.TokenEndpoint != "" {
+		at, rt, exp, err := refreshViaExternalIdp(
+			account.RefreshToken, account.TokenEndpoint, account.ClientID, account.Scopes, client,
+		)
+		if err == nil {
+			return at, rt, exp, "", "", "", nil
+		}
+		// Fall through to social fallback as last resort.
+	}
 
 	if account.AuthMethod == "social" {
 		// Try social refresh first (kiro.dev/refreshToken).
@@ -253,7 +424,7 @@ func RefreshToken(account *config.Account) (string, string, int64, string, strin
 		if region == "" {
 			region = "us-east-1"
 		}
-		newClientID, newClientSecret, regErr := registerOIDCClientInternal(region)
+		newClientID, newClientSecret, regErr := RegisterOIDCClient(region)
 		if regErr == nil && newClientID != "" {
 			at, rt, exp, pa, oidcErr := refreshOIDCToken(
 				account.RefreshToken, newClientID, newClientSecret, region, client,
@@ -279,7 +450,7 @@ func RefreshToken(account *config.Account) (string, string, int64, string, strin
 	if region == "" {
 		region = "us-east-1"
 	}
-	newClientID, newClientSecret, regErr := registerOIDCClientInternal(region)
+	newClientID, newClientSecret, regErr := RegisterOIDCClient(region)
 	if regErr == nil && newClientID != "" {
 		accessToken, refreshToken, expiresAt, profileArn, err = refreshOIDCToken(
 			account.RefreshToken, newClientID, newClientSecret, region, client,
@@ -299,8 +470,8 @@ func RefreshToken(account *config.Account) (string, string, int64, string, strin
 	return "", "", 0, "", "", "", err
 }
 
-// registerOIDCClientInternal registers a new OIDC client pair with AWS SSO.
-func registerOIDCClientInternal(region string) (clientID, clientSecret string, err error) {
+// RegisterOIDCClient registers a new OIDC client pair with AWS SSO.
+func RegisterOIDCClient(region string) (clientID, clientSecret string, err error) {
 	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", region)
 	startUrl := "https://view.awsapps.com/start"
 	scopes := []string{
@@ -389,6 +560,56 @@ func refreshOIDCToken(refreshToken, clientID, clientSecret, region string, clien
 
 	expiresAt := time.Now().Unix() + int64(result.ExpiresIn)
 	return result.AccessToken, result.RefreshToken, expiresAt, result.ProfileArn, nil
+}
+
+// refreshViaExternalIdp refreshes an enterprise IdP-issued token through the IdP's own
+// token endpoint (form-encoded OAuth2 refresh_token grant, snake_case response).
+func refreshViaExternalIdp(refreshToken, tokenEndpoint, clientID, scopes string, client *http.Client) (string, string, int64, error) {
+	if refreshToken == "" || tokenEndpoint == "" {
+		return "", "", 0, fmt.Errorf("external IdP refresh: refresh token and endpoint required")
+	}
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", refreshToken)
+	if strings.TrimSpace(scopes) != "" {
+		form.Set("scope", scopes)
+	}
+	req, err := http.NewRequest("POST", tokenEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", "", 0, fmt.Errorf("external IdP refresh: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("external IdP refresh: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("external IdP refresh: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", 0, fmt.Errorf("external IdP refresh failed (status %d): %s", resp.StatusCode, string(body))
+	}
+	var result struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+		Error        string `json:"error"`
+	}
+	_ = json.Unmarshal(body, &result)
+	if result.AccessToken == "" {
+		if result.Error != "" {
+			return "", "", 0, fmt.Errorf("external IdP refresh: %s", result.Error)
+		}
+		return "", "", 0, fmt.Errorf("external IdP refresh: empty access token")
+	}
+	if result.ExpiresIn <= 0 {
+		result.ExpiresIn = 3600
+	}
+	return result.AccessToken, result.RefreshToken, time.Now().Unix()+int64(result.ExpiresIn), nil
 }
 
 // refreshSocialToken refreshes Social (GitHub/Google) token
