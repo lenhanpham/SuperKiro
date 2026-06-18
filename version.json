@@ -1,5 +1,5 @@
 {
-  "version": "0.1.3",
-  "changelog": "Serialization and refresh token rotation ensure Kiro accounts hopefully will not get expired anymore",
+  "version": "0.1.4",
+  "changelog": "Support Kiro/CodeWhisperer API key ksk_... (Experiment and not tested)",
   "download": "https://github.com/lenhanpham/SuperKiro"
 }
