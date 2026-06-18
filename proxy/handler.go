@@ -5173,7 +5173,6 @@ func resolveApiKeyProfile(apiKey, region string) (string, error) {
 	req.Header.Set("x-amz-target", "AmazonCodeWhispererService.ListAvailableProfiles")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("tokentype", "API_KEY")
 
 	client := auth.GetAuthClientForProxy(config.GetProxyURL())
 	resp, err := client.Do(req)
@@ -5198,14 +5197,17 @@ func resolveApiKeyProfile(apiKey, region string) (string, error) {
 	}
 
 	for _, p := range result.Profiles {
-		arn := p.Arn
-		if arn == "" {
-			arn = p.ProfileArn
+			arn := p.Arn
+			if arn == "" {
+				arn = p.ProfileArn
+			}
+			if arn != "" {
+				parts := strings.Split(arn, ":")
+				if len(parts) >= 5 && parts[3] == region {
+					return arn, nil
+				}
+			}
 		}
-		if arn != "" && strings.Contains(arn, ":"+region+":") {
-			return arn, nil
-		}
-	}
 	for _, p := range result.Profiles {
 		arn := p.Arn
 		if arn == "" {
