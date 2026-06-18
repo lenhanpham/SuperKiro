@@ -68,7 +68,7 @@ func ImportFromSsoToken(bearerToken, region string) (accessToken, refreshToken, 
 
 	// Discover profileArn via ListAvailableProfiles.
 	if accessToken != "" {
-		profileArn = DiscoverProfileArn(accessToken, region)
+		profileArn = DiscoverProfileArn(accessToken, region, false)
 	}
 
 	return accessToken, refreshToken, clientID, clientSecret, expiresIn, profileArn, nil

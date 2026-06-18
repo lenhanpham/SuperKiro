@@ -107,8 +107,9 @@ func ExternalIdpDiscover(ctx context.Context, issuerURL string) (authEndpoint, t
 }
 
 // BuildExternalIdpAuthorizeURL builds the IdP authorization-code+PKCE URL the browser
-// is redirected to for the enterprise leg.
-func BuildExternalIdpAuthorizeURL(authEndpoint, clientID, redirectURI, scopes, challenge, state string) string {
+// is redirected to for the enterprise leg. loginHint is optional; when non-empty it is
+// included so the IdP knows which user to authenticate (critical for Microsoft Entra).
+func BuildExternalIdpAuthorizeURL(authEndpoint, clientID, redirectURI, scopes, challenge, state, loginHint string) string {
 	q := url.Values{}
 	q.Set("client_id", clientID)
 	q.Set("response_type", "code")
@@ -118,6 +119,9 @@ func BuildExternalIdpAuthorizeURL(authEndpoint, clientID, redirectURI, scopes, c
 	q.Set("code_challenge_method", "S256")
 	q.Set("response_mode", "query")
 	q.Set("state", state)
+	if strings.TrimSpace(loginHint) != "" {
+		q.Set("login_hint", strings.TrimSpace(loginHint))
+	}
 	return authEndpoint + "?" + q.Encode()
 }
 

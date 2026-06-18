@@ -151,7 +151,7 @@ func CompleteIamSsoLogin(sessionID, callbackUrl string) (accessToken, refreshTok
 
 	// Discover profileArn via ListAvailableProfiles.
 	if accessToken != "" {
-		profileArn = DiscoverProfileArn(accessToken, session.Region)
+		profileArn = DiscoverProfileArn(accessToken, session.Region, false)
 	}
 
 	// clean up session

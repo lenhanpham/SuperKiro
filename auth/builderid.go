@@ -194,7 +194,7 @@ func PollBuilderIdAuth(sessionID string) (accessToken, refreshToken, clientID, c
 		}
 
 		// Discover profileArn via ListAvailableProfiles.
-		profileArn = DiscoverProfileArn(tokenResult.AccessToken, session.Region)
+		profileArn = DiscoverProfileArn(tokenResult.AccessToken, session.Region, false)
 
 		// clean up session
 		builderIdMu.Lock()

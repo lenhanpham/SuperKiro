@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -162,7 +163,8 @@ func PollSocialLogin(deviceCode, provider string) (accessToken, refreshToken, pr
 // account by calling ListAvailableProfiles on the region-matched Amazon Q endpoint. Prefers a
 // profile whose ARN contains the token's region, then falls back to the first profile returned.
 // Builder ID accounts legitimately have none and return "" without error.
-func DiscoverProfileArn(accessToken, region string) string {
+// When externalIdp is true, includes TokenType: EXTERNAL_IDP for enterprise SSO tokens.
+func DiscoverProfileArn(accessToken, region string, externalIdp bool) string {
 	if accessToken == "" {
 		return ""
 	}
@@ -171,24 +173,29 @@ func DiscoverProfileArn(accessToken, region string) string {
 	}
 	region = strings.ToLower(region)
 
-	var runtimeHost string
-	if region == "us-east-1" {
-		runtimeHost = "https://codewhisperer.us-east-1.amazonaws.com"
-	} else {
-		runtimeHost = fmt.Sprintf("https://q.%s.amazonaws.com", region)
-	}
+	runtimeHost := fmt.Sprintf("https://codewhisperer.%s.amazonaws.com", region)
 
 	payload := map[string]int{"maxResults": 10}
 	body, _ := json.Marshal(payload)
 
-	req, err := http.NewRequest("POST", runtimeHost+"/ListAvailableProfiles", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", runtimeHost+"/", bytes.NewReader(body))
 	if err != nil {
 		return ""
 	}
+	machineID := deriveMachineID(accessToken, region)
 	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
+	req.Header.Set("Accept", "application/x-amz-json-1.0")
 	req.Header.Set("x-amz-target", "AmazonCodeWhispererService.ListAvailableProfiles")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("amz-sdk-invocation-id", machineID)
+	req.Header.Set("amz-sdk-request", "attempt=1; max=1")
+	req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
+	req.Header.Set("x-amzn-codewhisperer-optout", "true")
+	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/windows#10.0.26200 lang/js md/nodejs#22.21.1 api/codewhispererruntime#1.0.0 m/N,E KiroIDE-0.10.32-%s", machineID))
+	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.0 KiroIDE-0.10.32-%s", machineID))
+	if externalIdp {
+		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	}
 
 	client := httpClient()
 	resp, err := client.Do(req)
@@ -228,6 +235,15 @@ func DiscoverProfileArn(accessToken, region string) string {
 	return fallback
 }
 
+// deriveMachineID builds a stable machine identifier from the access token and region,
+// matching the reference implementation's BuildMachineID.
+func deriveMachineID(parts ...string) string {
+	seed := strings.Join(parts, "|")
+	// Simple hash for machine ID — not crypto-critical, just needs to be stable.
+	h := fmt.Sprintf("%x", sha256.Sum256([]byte(seed)))
+	return h[:16]
+}
+
 // ListProfiles calls the CodeWhisperer ListAvailableProfiles endpoint with the Kiro IDE
 // headers. When externalIdp is true, includes TokenType: EXTERNAL_IDP for enterprise SSO.
 // Returns the first profile ARN or "" if none available.
@@ -240,25 +256,26 @@ func ListProfiles(accessToken, region string, externalIdp bool) string {
 	}
 	region = strings.ToLower(region)
 
-	var runtimeHost string
-	if region == "us-east-1" {
-		runtimeHost = "https://codewhisperer.us-east-1.amazonaws.com"
-	} else {
-		runtimeHost = fmt.Sprintf("https://q.%s.amazonaws.com", region)
-	}
+	runtimeHost := fmt.Sprintf("https://codewhisperer.%s.amazonaws.com", region)
 
 	payload := map[string]int{"maxResults": 10}
 	body, _ := json.Marshal(payload)
 
-	req, err := http.NewRequest("POST", runtimeHost+"/ListAvailableProfiles", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", runtimeHost+"/", bytes.NewReader(body))
 	if err != nil {
 		return ""
 	}
+	machineID := deriveMachineID(accessToken, region)
 	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
+	req.Header.Set("Accept", "application/x-amz-json-1.0")
 	req.Header.Set("x-amz-target", "AmazonCodeWhispererService.ListAvailableProfiles")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "aws-sdk-js/1.0.0 KiroIDE-0.10.32")
+	req.Header.Set("amz-sdk-invocation-id", machineID)
+	req.Header.Set("amz-sdk-request", "attempt=1; max=1")
+	req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
+	req.Header.Set("x-amzn-codewhisperer-optout", "true")
+	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/windows#10.0.26200 lang/js md/nodejs#22.21.1 api/codewhispererruntime#1.0.0 m/N,E KiroIDE-0.10.32-%s", machineID))
+	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.0 KiroIDE-0.10.32-%s", machineID))
 	if externalIdp {
 		req.Header.Set("TokenType", "EXTERNAL_IDP")
 	}

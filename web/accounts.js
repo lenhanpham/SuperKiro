@@ -803,6 +803,8 @@ let testModalRunning = false;
     else if (type === 'social') modalSocial(title, body);
     else if (type === 'kirossi') modalKiroSso(title, body);
     else if (type === 'kirocli') modalKiroCli(title, body);
+    else if (type === 'kiroAuto') modalKiroAuto(title, body);
+    else if (type === 'kiroToken') modalKiroToken(title, body);
     else if (type === 'ssocache') modalSSOCache(title, body);
     else if (type === 'local') modalLocal(title, body);
     else if (type === 'credentials') modalCredentials(title, body);
@@ -829,6 +831,8 @@ let testModalRunning = false;
       methodCard('social', t('modal.socialTitle'), t('modal.socialDesc')) +
       methodCard('kirossi', t('modal.kirossiTitle'), t('modal.kirossiDesc')) +
       methodCard('kirocli', t('modal.kirocliTitle'), t('modal.kirocliDesc')) +
+      methodCard('kiroAuto', t('kiroauto.title'), t('kiroauto.desc')) +
+      methodCard('kiroToken', t('kirotoken.title'), t('kirotoken.desc')) +
       methodCard('ssocache', t('modal.ssocacheTitle'), t('modal.ssocacheDesc')) +
       methodCard('local', t('modal.localTitle'), t('modal.localDesc')) +
       methodCard('credentials', t('modal.credentialsTitle'), t('modal.credentialsDesc')) +
@@ -1058,6 +1062,41 @@ let testModalRunning = false;
       console.error('kiroSso:', e);
       toastError(t('kirossi.failed') + ': ' + (e.message || e));
     }
+  }
+
+  async function autoImportKiro() {
+    try {
+      toastPrimary(t('kiroauto.scanning'));
+      const res = await api('/auth/kiro-auto-import');
+      const d = await res.json();
+      if (d.found) {
+        closeModal(); loadAccounts(); loadStats();
+        toastPrimary(t('kirocli.importSuccess') + ': ' + (d.account?.email || d.account?.id));
+        autoRefreshNewAccount(d.account?.id);
+      } else {
+        toastWarning(d.error || t('kiroauto.notFound'));
+      }
+    } catch (e) {
+      console.error('autoImportKiro:', e);
+      toastError(t('common.failed') + ': ' + (e.message || e));
+    }
+  }
+
+  function modalKiroAuto(title, body) {
+    title.textContent = t('kiroauto.title');
+    body.innerHTML =
+      '<p class="help-block">' + escapeHtml(t('kiroauto.desc')) + '</p>' +
+      '<div class="help-block">' +
+      '<p><b>' + escapeHtml(t('kirocli.fileLocation')) + '</b></p>' +
+      '<p>' + escapeHtml(t('kirocli.linux')) + ': <code class="code-inline">~/.local/share/kiro-cli/data.sqlite3</code></p>' +
+      '<p>' + escapeHtml(t('kirocli.windows')) + ': <code class="code-inline">%APPDATA%\\kiro\\storage.db</code></p>' +
+      '<p>' + escapeHtml(t('ssocache.path')) + ': <code class="code-inline">~/.aws/sso/cache/</code></p>' +
+      '</div>' +
+      '<div class="modal-footer">' +
+      '<button class="btn btn-secondary" data-modal-goto="add" type="button">' + escapeHtml(t('common.back')) + '</button>' +
+      '<button class="btn btn-primary" id="autoImportKiroBtn" type="button">' + escapeHtml(t('kiroauto.button')) + '</button>' +
+      '</div>';
+    $('autoImportKiroBtn').addEventListener('click', autoImportKiro);
   }
 
   function modalKiroCli(title, body) {
@@ -1421,6 +1460,40 @@ let testModalRunning = false;
       toastPrimary(t('ssocache.importSuccess') + ': ' + (d.account?.email || d.account?.id));
       autoRefreshNewAccount(d.account?.id);
     } else toastError(t('common.failed') + ': ' + (d.error || ''));
+  }
+  function modalKiroToken(title, body) {
+    title.textContent = t('kirotoken.title');
+    body.innerHTML =
+      '<p class="help-block">' + escapeHtml(t('kirotoken.desc')) + '</p>' +
+      '<div class="form-group"><label>' + escapeHtml(t('kirotoken.label')) + '</label>' +
+      '<input type="text" id="kiroTokenInput" class="form-control" placeholder="' + escapeHtml(t('kirotoken.placeholder')) + '" /></div>' +
+      '<div class="form-group"><label>' + escapeHtml(t('detail.region')) + '</label>' +
+      '<input type="text" id="kiroTokenRegion" value="us-east-1" /></div>' +
+      '<div class="modal-footer">' +
+      '<button class="btn btn-secondary" data-modal-goto="add" type="button">' + escapeHtml(t('common.back')) + '</button>' +
+      '<button class="btn btn-primary" id="importKiroTokenBtn" type="button">' + escapeHtml(t('kirotoken.button')) + '</button>' +
+      '</div>';
+    $('importKiroTokenBtn').addEventListener('click', importKiroToken);
+  }
+  async function importKiroToken() {
+    try {
+      const refreshToken = $('kiroTokenInput').value.trim();
+      const region = ($('kiroTokenRegion') && $('kiroTokenRegion').value) || 'us-east-1';
+      if (!refreshToken) return toastWarning(t('kirotoken.label') + ' required');
+      const res = await api('/auth/kiro-import', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken, region }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        closeModal(); loadAccounts(); loadStats();
+        toastPrimary(t('kirocli.importSuccess') + ': ' + (d.account?.email || d.account?.id));
+        autoRefreshNewAccount(d.account?.id);
+      } else toastError(t('common.failed') + ': ' + (d.error || ''));
+    } catch (e) {
+      console.error('importKiroToken:', e);
+      toastError(t('common.failed') + ': ' + (e.message || e));
+    }
   }
   async function startSocialLogin() {
     const provider = $('socialProvider').value;

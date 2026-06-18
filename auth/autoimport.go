@@ -192,13 +192,14 @@ func readSQLite(dbPath, region string) (*KiroCliCredentials, error) {
 		}
 	}
 
-	// Step 5: fallback region.
-	if creds.Region == "" {
-		creds.Region = "us-east-1"
+	// Step 5: resolve region — caller param wins, then DB value, then default.
+	if region == "" {
+		region = creds.Region
 	}
-	if region != "" {
-		creds.Region = region
+	if region == "" {
+		region = "us-east-1"
 	}
+	creds.Region = region
 
 	if creds.RefreshToken == "" {
 		return nil, fmt.Errorf("no refresh token found in database")
@@ -292,4 +293,22 @@ func readJSONValue(db *sql.DB, table, key string) (map[string]interface{}, error
 		return nil, err
 	}
 	return data, nil
+}
+
+// DeriveKiroConnectionName returns a human-readable label for a Kiro/AWS connection.
+// Falls back through: email → profileArn label → provider+region label.
+func DeriveKiroConnectionName(email, profileArn, region, targetProvider string) string {
+	if email != "" {
+		return email
+	}
+	if region == "" {
+		region = "us-east-1"
+	}
+	if profileArn != "" {
+		return "AWS CodeWhisperer (" + region + ")"
+	}
+	if targetProvider == "amazon-q" {
+		return "Amazon Q (" + region + ")"
+	}
+	return "Kiro (" + region + ")"
 }

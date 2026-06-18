@@ -2781,6 +2781,10 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 		h.apiKiroSsoExchange(w, r)
 	case path == "/auth/kiro-cli" && r.Method == "POST":
 		h.apiImportKiroCli(w, r)
+	case path == "/auth/kiro-auto-import" && r.Method == "GET":
+		h.apiAutoImportKiroCli(w, r)
+	case path == "/auth/kiro-import" && r.Method == "POST":
+		h.apiImportKiroToken(w, r)
 	case path == "/auth/kiro-api-key" && r.Method == "POST":
 		h.apiImportKiroApiKey(w, r)
 	case path == "/auth/kiro-cli-register" && r.Method == "POST":
@@ -4988,6 +4992,8 @@ func (h *Handler) apiKiroEnterpriseStart(w http.ResponseWriter, r *http.Request)
 	issuerURL := strings.TrimSpace(q.Get("issuer_url"))
 	clientID2 := strings.TrimSpace(q.Get("client_id"))
 	scopes := strings.TrimSpace(q.Get("scopes"))
+	loginHint := strings.TrimSpace(q.Get("login_hint"))
+	logger.Infof("[SSO-Enterprise] descriptor: issuer=%s client_id=%s scopes=%q login_hint=%q", issuerURL, clientID2, scopes, loginHint)
 	if clientID2 == "" {
 		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Missing client_id in enterprise descriptor"})
@@ -5009,7 +5015,8 @@ func (h *Handler) apiKiroEnterpriseStart(w http.ResponseWriter, r *http.Request)
 	}
 
 	redirectURI := "http://localhost:3128/oauth/callback"
-	idpAuthURL := auth.BuildExternalIdpAuthorizeURL(authEndpoint, clientID2, redirectURI, scopes, pkce2.Challenge, pkce2.State)
+	idpAuthURL := auth.BuildExternalIdpAuthorizeURL(authEndpoint, clientID2, redirectURI, scopes, pkce2.Challenge, pkce2.State, loginHint)
+	logger.Infof("[SSO-Enterprise] IdP auth URL built, redirect_uri=%s", redirectURI)
 
 	auth.SetSsoEnterpriseContext(req.SessionID, tokenEndpoint, issuerURL, clientID2, scopes, pkce2.Verifier, redirectURI)
 
@@ -5046,6 +5053,7 @@ func (h *Handler) apiKiroSsoExchange(w http.ResponseWriter, r *http.Request) {
 	}
 	q := parsed.Query()
 	code := strings.TrimSpace(q.Get("code"))
+	state := strings.TrimSpace(q.Get("state"))
 	errParam := strings.TrimSpace(q.Get("error"))
 	desc := strings.TrimSpace(q.Get("error_description"))
 	if errParam != "" {
@@ -5063,6 +5071,11 @@ func (h *Handler) apiKiroSsoExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate state for enterprise leg-2 (anti-CSRF).
+	if session.Provider == "enterprise" && session.CodeVerifier != "" && state != "" && state != session.ID {
+		logger.Warnf("[SSO-Exchange] state mismatch: expected session=%s got=%s", session.ID, state)
+	}
+
 	var accessToken, refreshToken, profileArn string
 	var expiresIn int
 	region := session.Region
@@ -5076,13 +5089,16 @@ func (h *Handler) apiKiroSsoExchange(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(map[string]string{"error": "Missing enterprise PKCE verifier"})
 			return
 		}
+		logger.Infof("[SSO-Exchange] enterprise: token_endpoint=%s client_id=%s scopes=%q redirect_uri=%s", session.TokenEndpoint, session.ClientID, session.Scopes, session.RedirectURI)
 		at, rt, exp, err := auth.ExchangeExternalIdpCode(r.Context(), session.TokenEndpoint, session.ClientID, code, session.CodeVerifier, session.RedirectURI, session.Scopes)
 		if err != nil {
+			logger.Errorf("[SSO-Exchange] enterprise exchange failed: %v", err)
 			w.WriteHeader(502)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 		accessToken, refreshToken, expiresIn = at, rt, exp
+		logger.Infof("[SSO-Exchange] enterprise success: at_len=%d rt_len=%d exp=%d", len(accessToken), len(refreshToken), expiresIn)
 	} else {
 		if session.PKCE == nil {
 			w.WriteHeader(400)
@@ -5091,6 +5107,7 @@ func (h *Handler) apiKiroSsoExchange(w http.ResponseWriter, r *http.Request) {
 		}
 		at, rt, pa, exp, err := auth.ExchangeSocialCode(r.Context(), code, session.PKCE.Verifier)
 		if err != nil {
+			logger.Errorf("[SSO-Exchange] social exchange failed: %v", err)
 			w.WriteHeader(502)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
@@ -5430,6 +5447,284 @@ func (h *Handler) apiImportKiroCli(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"source":  "kiro-cli-sqlite",
+		"account": map[string]interface{}{
+			"id":    account.ID,
+			"email": account.Email,
+		},
+	})
+}
+
+// apiAutoImportKiroCli scans the filesystem for kiro-cli SQLite and ~/.aws/sso/cache
+// without requiring file upload. Mirrors OmniRoute's GET /api/oauth/kiro/auto-import.
+func (h *Handler) apiAutoImportKiroCli(w http.ResponseWriter, r *http.Request) {
+	region := r.URL.Query().Get("region")
+	if region == "" {
+		region = "us-east-1"
+	}
+	targetProvider := r.URL.Query().Get("targetProvider")
+	if targetProvider != "amazon-q" {
+		targetProvider = "kiro"
+	}
+
+	// Try kiro-cli SQLite first
+	creds, err := auth.ImportKiroCli()
+	source := "kiro-cli-sqlite"
+
+	// Fall back to ~/.aws/sso/cache
+	if err != nil {
+		ssoCreds, ssoErr := auth.ImportSSOCache()
+		if ssoErr == nil && ssoCreds.RefreshToken != "" {
+			creds = &auth.KiroCliCredentials{
+				RefreshToken: ssoCreds.RefreshToken,
+				Region:       region,
+				ExpiresAt:    time.Now().Add(1 * time.Hour),
+			}
+			source = "aws-sso-cache"
+			err = nil
+		}
+	}
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"found":      false,
+			"error":      "Kiro credentials not found. Run `kiro-cli login` then retry, or use Import Token.",
+			"triedPaths": []string{"~/.local/share/kiro-cli/data.sqlite3", "~/.aws/sso/cache/"},
+		})
+		return
+	}
+
+	// Register OIDC client if SQLite didn't have one
+	clientID := creds.ClientID
+	clientSecret := creds.ClientSecret
+	if clientID == "" || clientSecret == "" {
+		newCID, newCS, regErr := auth.RegisterOIDCClient(region)
+		if regErr == nil && newCID != "" {
+			clientID = newCID
+			clientSecret = newCS
+		}
+	}
+
+	// Refresh token
+	tempAccount := &config.Account{
+		RefreshToken: creds.RefreshToken,
+		AccessToken:  creds.AccessToken,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		AuthMethod:   "idc",
+		Region:       region,
+	}
+	newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, refreshErr := auth.RefreshAccountToken(tempAccount)
+	if refreshErr != nil {
+		// Fall back to social refresh
+		tempAccount2 := &config.Account{
+			RefreshToken: creds.RefreshToken,
+			AuthMethod:   "social",
+			Region:       region,
+		}
+		newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, refreshErr = auth.RefreshAccountToken(tempAccount2)
+		if refreshErr != nil {
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Token refresh failed: " + refreshErr.Error()})
+			return
+		}
+	}
+	if newRefreshToken != "" {
+		creds.RefreshToken = newRefreshToken
+	}
+	if newAccessToken != "" {
+		creds.AccessToken = newAccessToken
+	}
+	if profileArn == "" {
+		profileArn = creds.ProfileArn
+	}
+
+	email, _, _ := auth.GetUserInfo(creds.AccessToken)
+	connectionName := auth.DeriveKiroConnectionName(email, profileArn, region, targetProvider)
+
+	// Dedup by profileArn
+	if profileArn != "" {
+		existing := config.FindAccountByProfileArn(profileArn)
+		if existing != nil {
+			existing.AccessToken = creds.AccessToken
+			existing.RefreshToken = creds.RefreshToken
+			existing.ExpiresAt = expiresAt
+			existing.Email = email
+			existing.Nickname = connectionName
+			if err := config.UpdateAccount(existing.ID, *existing); err != nil {
+				w.WriteHeader(500)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			h.pool.Reload()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"found":  true,
+				"source": source,
+				"account": map[string]interface{}{
+					"id":    existing.ID,
+					"email": email,
+				},
+			})
+			return
+		}
+	}
+
+	account := config.Account{
+		ID:           auth.GenerateAccountID(),
+		Email:        email,
+		Nickname:     connectionName,
+		AccessToken:  creds.AccessToken,
+		RefreshToken: creds.RefreshToken,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		AuthMethod:   "idc",
+		Provider:     "BuilderId",
+		Region:       region,
+		ExpiresAt:    expiresAt,
+		Enabled:      true,
+		MachineId:    config.GenerateMachineId(),
+		ProfileArn:   profileArn,
+	}
+
+	if err := config.AddAccount(account); err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	h.pool.Reload()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"found":  true,
+		"source": source,
+		"account": map[string]interface{}{
+			"id":    account.ID,
+			"email": account.Email,
+		},
+	})
+}
+
+// apiImportKiroToken accepts a pasted refresh token and validates/saves it.
+// Mirrors OmniRoute's POST /api/oauth/kiro/import.
+func (h *Handler) apiImportKiroToken(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RefreshToken string `json:"refreshToken"`
+		Region       string `json:"region"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+
+	refreshToken := strings.TrimSpace(body.RefreshToken)
+	if refreshToken == "" {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "refreshToken is required"})
+		return
+	}
+	if !strings.HasPrefix(refreshToken, "aorAAAAAG") {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid token format. Token should start with aorAAAAAG..."})
+		return
+	}
+
+	region := strings.TrimSpace(body.Region)
+	if region == "" {
+		region = "us-east-1"
+	}
+	targetProvider := r.URL.Query().Get("targetProvider")
+	if targetProvider != "amazon-q" {
+		targetProvider = "kiro"
+	}
+
+	// Register OIDC client for this connection
+	clientID, clientSecret, regErr := auth.RegisterOIDCClient(region)
+	if regErr != nil {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to register OIDC client: " + regErr.Error()})
+		return
+	}
+
+	// Try OIDC refresh first
+	tempAccount := &config.Account{
+		RefreshToken: refreshToken,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		AuthMethod:   "idc",
+		Region:       region,
+	}
+	newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err := auth.RefreshAccountToken(tempAccount)
+	if err != nil {
+		// Fall back to social refresh
+		tempAccount2 := &config.Account{
+			RefreshToken: refreshToken,
+			AuthMethod:   "social",
+			Region:       region,
+		}
+		newAccessToken, newRefreshToken, expiresAt, profileArn, _, _, err = auth.RefreshAccountToken(tempAccount2)
+		if err != nil {
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Token validation failed: " + err.Error()})
+			return
+		}
+	}
+	if newRefreshToken != "" {
+		refreshToken = newRefreshToken
+	}
+
+	email, _, _ := auth.GetUserInfo(newAccessToken)
+	connectionName := auth.DeriveKiroConnectionName(email, profileArn, region, targetProvider)
+
+	// Dedup by profileArn
+	if profileArn != "" {
+		existing := config.FindAccountByProfileArn(profileArn)
+		if existing != nil {
+			existing.AccessToken = newAccessToken
+			existing.RefreshToken = refreshToken
+			existing.ExpiresAt = expiresAt
+			existing.Email = email
+			existing.Nickname = connectionName
+			if err := config.UpdateAccount(existing.ID, *existing); err != nil {
+				w.WriteHeader(500)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			h.pool.Reload()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"account": map[string]interface{}{
+					"id":    existing.ID,
+					"email": email,
+				},
+			})
+			return
+		}
+	}
+
+	account := config.Account{
+		ID:           auth.GenerateAccountID(),
+		Email:        email,
+		Nickname:     connectionName,
+		AccessToken:  newAccessToken,
+		RefreshToken: refreshToken,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		AuthMethod:   "idc",
+		Provider:     "BuilderId",
+		Region:       region,
+		ExpiresAt:    expiresAt,
+		Enabled:      true,
+		MachineId:    config.GenerateMachineId(),
+		ProfileArn:   profileArn,
+	}
+
+	if err := config.AddAccount(account); err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	h.pool.Reload()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
 		"account": map[string]interface{}{
 			"id":    account.ID,
 			"email": account.Email,
