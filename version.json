@@ -1,5 +1,5 @@
 {
-  "version": "0.1.4",
-  "changelog": "Support Kiro/CodeWhisperer API key ksk_... (Experiment and not tested)",
+  "version": "0.1.5",
+  "changelog": "Support Support Kiro SSO login",
   "download": "https://github.com/lenhanpham/SuperKiro"
 }
