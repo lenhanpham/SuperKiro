@@ -1,5 +1,5 @@
 # builder stage runs on host native platform (amd64), uses Go cross-compilation for target binary
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
