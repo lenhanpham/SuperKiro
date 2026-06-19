@@ -113,8 +113,11 @@ func spawnBackground(pidPath string) {
 	}
 	cmd := exec.Command(exe, args...)
 	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	// Redirect to NUL on Windows, /dev/null on Unix so child doesn't
+	// inherit parent's console handles. With DETACHED_PROCESS on Windows,
+	// inherited console handles become stale when the parent exits.
+	cmd.Stdout, _ = os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	cmd.Stderr, _ = os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	setDetached(cmd)
 	if err := cmd.Start(); err != nil {
 		fmt.Printf("\n  Failed to start background process: %v\n", err)
