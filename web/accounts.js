@@ -1108,10 +1108,17 @@ let testModalRunning = false;
       '<p><b>' + escapeHtml(t('kirocli.fileLocation')) + '</b></p>' +
       '<p>' + escapeHtml(t('kirocli.linux')) + ': <code class="code-inline">~/.local/share/kiro-cli/data.sqlite3</code></p>' +
       '<p>' + escapeHtml(t('kirocli.windows')) + ': <code class="code-inline">%APPDATA%\\kiro\\storage.db</code></p>' +
-      '<p><i class="fa-regular fa-circle-info"></i> ' + escapeHtml(t('kirocli.uploadHint')) + '</p>' +
+      '<p><i class="fa-solid fa-circle-info"></i> ' + escapeHtml(t('kirocli.uploadHint')) + '</p>' +
       '</div>' +
-      '<div class="form-group"><label>' + escapeHtml(t('kirocli.uploadLabel')) + '</label>' +
-      '<input type="file" accept=".sqlite3,.db,.sqlite" id="kiroCliFile" /></div>' +
+      '<div class="form-group">' +
+      '<label>' + escapeHtml(t('kirocli.uploadLabel')) + '</label>' +
+      '<div class="input-row">' +
+      '<span id="kiroCliFileName" class="file-name-display"></span>' +
+      '<label class="btn btn-primary btn-sm" style="margin-left:auto;white-space:nowrap">' + escapeHtml(t('kirocli.browse')) +
+      '<input type="file" accept=".sqlite3,.db,.sqlite" id="kiroCliFile" class="file-input-hidden" />' +
+      '</label>' +
+      '</div>' +
+      '</div>' +
       '<div class="form-group"><label>' + escapeHtml(t('detail.region')) + '</label>' +
       '<input type="text" id="kiroCliRegion" value="us-east-1" /></div>' +
       '<div class="modal-footer">' +
@@ -1119,6 +1126,11 @@ let testModalRunning = false;
       '<button class="btn btn-primary" id="importKiroCliBtn" type="button">' + escapeHtml(t('common.import')) + '</button>' +
       '</div>';
     $('importKiroCliBtn').addEventListener('click', importKiroCli);
+    $('kiroCliFile').addEventListener('change', function() {
+      var nameSpan = $('kiroCliFileName');
+      nameSpan.textContent = this.files && this.files[0] ? this.files[0].name : '';
+      nameSpan.style.color = this.files && this.files[0] ? 'var(--text-color, inherit)' : 'var(--text-secondary, #888)';
+    });
   }
 
   function modalSSOCache(title, body) {

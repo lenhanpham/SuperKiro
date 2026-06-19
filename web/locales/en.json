@@ -723,5 +723,6 @@
   "apikey.importFailed": "API key validation failed",
   "kirocli.uploadHint": "Or upload the SQLite file if Kiro CLI is on another machine",
   "kirocli.uploadLabel": "Upload SQLite File",
+  "kirocli.browse": "Browse...",
   "kirocli.fileTooLarge": "File too large (max 50 MB)"
 }
