@@ -38,12 +38,16 @@
 
 ## Features
 
-- Anthropic `/v1/messages`, OpenAI `/v1/chat/completions` & `/v1/responses`
-- Multi-account pool with round-robin load balancing
-- Auto token refresh, SSE streaming, Web admin panel
-- Multiple auth: AWS Builder ID, IAM Identity Center (Enterprise SSO), SSO Token, local cache, credentials JSON
-- Usage tracking, account import/export, i18n (CN / EN / VN)
-- Support configuring outbound proxy (SOCKS5 / HTTP)
+- **API compatibility** — Anthropic `/v1/messages`, OpenAI `/v1/chat/completions` & `/v1/responses`, streaming SSE
+- **Multi-account pool** — round-robin load balancing, endpoint failover, combo fallback chains
+- **12 auth methods** — AWS Builder ID, IAM Identity Center, SSO Token, Social Login, Kiro CLI import, Kiro SSO 3-step browser login, AWS SSO Cache, Kiro Local Cache, Credentials JSON, Kiro Web Cookie, API Key (ksk_), Refresh Token
+- **Auto token refresh** — credentials stay valid without manual intervention
+- **Prompt filters** — replace Claude Code CLI system prompts with compact backend version, strip env noise and boundary markers; custom regex rules (admin panel)
+- **Endpoint config** — auto-select, Kiro, CodeWhisperer, or Amazon-Q endpoint with optional fallback
+- **Per-account outbound proxy** — global or account-level SOCKS5 / HTTP proxy
+- **Usage tracking** — per-account credits, tokens, request counts, overage alerts
+- **Thinking mode** — configurable suffix trigger, output format (reasoning_content / thinking / think)
+- **Web admin panel** — manage accounts, settings, i18n (EN / CN / VN)
 
 ## Note
 Not all IDEs, CLI tools, and Agents are fully tested. Only Claude Code, OpenCode, and Codex are tested.

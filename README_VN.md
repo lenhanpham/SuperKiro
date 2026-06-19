@@ -39,12 +39,16 @@
 
 ## Tính năng
 
-- Anthropic `/v1/messages`, OpenAI `/v1/chat/completions` & `/v1/responses`
-- Nhóm đa tài khoản với cân bằng tải round-robin
-- Tự động làm mới Token, phát trực tiếp SSE, Web admin panel
-- Nhiều phương thức xác thực: AWS Builder ID, IAM Identity Center (Enterprise SSO), SSO Token, bộ nhớ đệm local, credentials JSON
-- Theo dõi sử dụng, xuất/nhập tài khoản, i18n (EN / 中文 / VN)
-- Hỗ trợ cấu hình proxy ra ngoài (SOCKS5 / HTTP)
+- **Tương thích API** — Anthropic `/v1/messages`, OpenAI `/v1/chat/completions` & `/v1/responses`, SSE streaming
+- **Nhóm đa tài khoản** — cân bằng tải round-robin, chuyển đổi dự phòng endpoint, chuỗi combo fallback
+- **12 phương thức xác thực** — AWS Builder ID, IAM Identity Center (Enterprise SSO), SSO Token, Social Login (Google/GitHub), Kiro CLI import, Kiro SSO 3 bước đăng nhập qua trình duyệt, AWS SSO Cache, Kiro Local Cache, Credentials JSON, Kiro Web Cookie, API Key (ksk_), Refresh Token
+- **Tự động làm mới Token** — thông tin xác thực luôn hợp lệ
+- **Lọc prompt** — thay thế system prompt Claude Code CLI bằng phiên bản backend gọn nhẹ, loại bỏ nhiễu môi trường, dấu phân cách; quy tắc regex tùy chỉnh (admin panel)
+- **Cấu hình endpoint** — tự động chọn, Kiro, CodeWhisperer hoặc Amazon-Q, tùy chọn tắt fallback
+- **Proxy riêng cho từng tài khoản** — SOCKS5 / HTTP toàn cục hoặc cấp tài khoản
+- **Theo dõi sử dụng** — tín dụng, token, số lượng request, cảnh báo vượt hạn mức
+- **Chế độ Thinking** — cấu hình hậu tố kích hoạt, định dạng đầu ra (reasoning_content / thinking / think)
+- **Web admin panel** — quản lý tài khoản, cài đặt, i18n (EN / CN / VN)
 
 ## Lưu ý
 

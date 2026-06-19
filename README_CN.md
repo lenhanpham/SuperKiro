@@ -39,12 +39,16 @@
 
 ## 功能特性
 
-- Anthropic `/v1/messages`、OpenAI `/v1/chat/completions` 与 `/v1/responses`
-- 多账号池轮询负载均衡
-- 自动 Token 刷新、SSE 流式输出、Web 管理面板
-- 多种认证方式：AWS Builder ID、IAM Identity Center (企业 SSO)、SSO Token、本地缓存、凭证 JSON
-- 用量追踪、账号导入导出、中英越三语
-- 支持设置出站代理（SOCKS5 / HTTP）
+- **API 兼容** — Anthropic `/v1/messages`、OpenAI `/v1/chat/completions` 与 `/v1/responses`，支持 SSE 流式输出
+- **多账号池** — 轮询负载均衡、端点故障转移、组合降级链
+- **12 种认证方式** — AWS Builder ID、IAM Identity Center（企业 SSO）、SSO Token、社交登录（Google/GitHub）、Kiro CLI 导入、Kiro SSO 三步浏览器登录、AWS SSO 缓存、Kiro 本地缓存、凭证 JSON、Kiro Web Cookie、API Key (ksk_)、Refresh Token
+- **自动刷新令牌** — 凭证持续有效，无需人工干预
+- **提示词过滤** — 将 Claude Code CLI 系统提示替换为精简后端提示、去除环境噪音、边界标记；自定义正则规则（管理面板）
+- **端点配置** — 自动选择、Kiro、CodeWhisperer、Amazon-Q 端点，支持关闭故障转移
+- **每账号出站代理** — 全局或账号级 SOCKS5 / HTTP 代理
+- **用量追踪** — 每账号额度、令牌、请求次数、超额告警
+- **思考模式** — 可配置触发后缀和输出格式（reasoning_content / thinking / think）
+- **Web 管理面板** — 管理账号与设置，三语界面（EN / CN / VN）
 
 ## 注意
 
