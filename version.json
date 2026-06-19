@@ -1,5 +1,5 @@
 {
-  "version": "0.1.5",
-  "changelog": "Support Support Kiro SSO login",
+  "version": "0.1.6",
+  "changelog": "Windows only: Fixed crashed when users choose 2 to run in background",
   "download": "https://github.com/lenhanpham/SuperKiro"
 }
